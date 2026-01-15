@@ -675,6 +675,9 @@ class MoonshineDecoder(LlamaModel):
 
 
 class MoonshineModel(WhisperModel):
+    def _mask_input_features(self):
+        raise AttributeError("Not needed for Moonshine")
+
     @can_return_tuple
     @auto_docstring
     def forward(
