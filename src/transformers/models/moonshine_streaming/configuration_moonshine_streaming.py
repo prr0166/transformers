@@ -13,252 +13,106 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Union
+from typing import Optional
 
 from ...configuration_utils import PreTrainedConfig
+from ...modeling_rope_utils import RopeParameters
+from ..auto import CONFIG_MAPPING
 
 
-class MoonshineStreamingConfig(PreTrainedConfig):
-    r"""
-    This is the configuration class to store the configuration of a [`MoonshineStreamingModel`]. It is used to
-    instantiate a Moonshine Streaming model according to the specified arguments, defining the model architecture.
-
-    Args:
-        vocab_size (`int`, *optional*, defaults to 32768):
-            Vocabulary size of the decoder.
-        encoder_dim (`int`, *optional*, defaults to 288):
-            Encoder hidden dimension.
-        decoder_dim (`int`, *optional*, defaults to 288):
-            Decoder hidden dimension.
-        hidden_size (`int`, *optional*, defaults to 288):
-            Alias for `decoder_dim` for compatibility with common config helpers.
-        head_dim (`int`, *optional*, defaults to 36):
-            Dimension per attention head.
-        num_attention_heads (`int`, *optional*, defaults to 8):
-            Number of attention heads shared by encoder and decoder if per-block values are not set.
-        encoder_num_attention_heads (`int`, *optional*):
-            Number of attention heads in encoder blocks. Defaults to `num_attention_heads`.
-        decoder_num_attention_heads (`int`, *optional*):
-            Number of attention heads in decoder blocks. Defaults to `num_attention_heads`.
-        num_hidden_layers (`int`, *optional*, defaults to 6):
-            Alias for `decoder_num_hidden_layers` for compatibility with common config helpers.
-        encoder_num_hidden_layers (`int`, *optional*, defaults to 6):
-            Number of encoder layers.
-        decoder_num_hidden_layers (`int`, *optional*, defaults to 6):
-            Number of decoder layer pairs.
-        ffn_mult (`int`, *optional*, defaults to 4):
-            Multiplier for the inner feed-forward dimension (inner_dim = dim * ffn_mult).
-        use_swiglu_encoder (`bool`, *optional*, defaults to `False`):
-            Whether to use SwiGLU activations in the encoder feed-forward blocks.
-        use_swiglu_decoder (`bool`, *optional*, defaults to `True`):
-            Whether to use SwiGLU activations in the decoder feed-forward blocks.
-        encoder_rotary_dim (`int`, *optional*, defaults to 0):
-            Rotary embedding dimension for encoder self-attention (0 disables rotary).
-        decoder_rotary_dim (`int`, *optional*, defaults to 32):
-            Rotary embedding dimension for decoder self-attention.
-        rotary_base (`float`, *optional*, defaults to 10000.0):
-            Base for rotary embeddings.
-        rotary_interpolation_factor (`float`, *optional*, defaults to 1.0):
-            Interpolation factor for rotary embeddings.
-        encoder_window (`tuple[int, int]` or `list[tuple[int, int]]`, *optional*, defaults to `(16, 4)`):
-            Sliding window attention specification for encoder layers. Use `None` for full attention.
-        attn_dropout (`float`, *optional*, defaults to 0.0):
-            Dropout probability for attention weights.
-        ff_dropout (`float`, *optional*, defaults to 0.1):
-            Dropout probability for feed-forward blocks.
-        adapter_dropout (`float`, *optional*, defaults to 0.1):
-            Dropout probability for adapter block dropout.
-        adapter_max_positions (`int`, *optional*, defaults to 4096):
-            Maximum sequence length for adapter positional embeddings.
-        adapter_block_size (`int`, *optional*, defaults to 4):
-            Block size (in frames) for structured adapter dropout.
-        sample_rate (`int`, *optional*, defaults to 16000):
-            Audio sample rate expected by the preprocessor.
-        frame_ms (`float`, *optional*, defaults to 5.0):
-            Frame length in milliseconds for the preprocessor.
-        preprocessor_c1 (`int`, *optional*):
-            Channel count of the first causal conv layer. Defaults to `2 * encoder_dim`.
-        preprocessor_c2 (`int`, *optional*):
-            Channel count of the second causal conv layer. Defaults to `encoder_dim`.
-        preprocessor_k1 (`int`, *optional*, defaults to 5):
-            Kernel size of the first causal conv layer.
-        preprocessor_k2 (`int`, *optional*, defaults to 5):
-            Kernel size of the second causal conv layer.
-        preprocessor_input_dropout_p (`float`, *optional*, defaults to 0.1):
-            Probability of replacing input frames with noise during training.
-        preprocessor_input_dropout_sigma (`float`, *optional*, defaults to 0.3):
-            Standard deviation of Gaussian noise for input dropout.
-        preprocessor_asinh_k_init (`float`, *optional*, defaults to 0.75):
-            Initial scale for asinh compression.
-        num_tokens_per_sec (`float`, *optional*, defaults to 6.5):
-            Expected tokens per second for length estimation in greedy generation.
-        attn_backend (`str`, *optional*, defaults to `"auto"`):
-            Attention backend to use ("auto", "flash", "efficient", or "math").
-        attention_bias (`bool`, *optional*, defaults to `False`):
-            Whether attention projection layers use bias terms.
-        use_cache (`bool`, *optional*, defaults to `True`):
-            Whether the model should return and use KV cache.
-        bos_token_id (`int`, *optional*, defaults to 1):
-            Beginning-of-sequence token id.
-        eos_token_id (`int`, *optional*, defaults to 2):
-            End-of-sequence token id.
-        pad_token_id (`int`, *optional*, defaults to 0):
-            Padding token id.
-        decoder_start_token_id (`int`, *optional*):
-            Decoder start token id. Defaults to `bos_token_id`.
-    """
-
-    model_type = "moonshine_streaming"
-    keys_to_ignore_at_inference = ["past_key_values"]
-    attribute_map = {
-        "hidden_size": "decoder_dim",
-        "num_attention_heads": "decoder_num_attention_heads",
-        "num_hidden_layers": "decoder_num_hidden_layers",
-        "attention_dropout": "attn_dropout",
-    }
+class MoonshineStreamingEncoderConfig(PreTrainedConfig):
+    model_type = "moonshine_streaming_encoder"
 
     def __init__(
         self,
-        vocab_size: int = 32768,
-        encoder_dim: Optional[int] = None,
-        decoder_dim: Optional[int] = None,
-        hidden_size: int = 288,
-        head_dim: int = 36,
-        num_attention_heads: int = 8,
-        encoder_num_attention_heads: Optional[int] = None,
-        decoder_num_attention_heads: Optional[int] = None,
-        num_hidden_layers: int = 6,
-        encoder_num_hidden_layers: Optional[int] = None,
-        decoder_num_hidden_layers: Optional[int] = None,
-        ffn_mult: int = 4,
-        use_swiglu_encoder: bool = False,
-        use_swiglu_decoder: bool = True,
-        encoder_rotary_dim: int = 0,
-        decoder_rotary_dim: int = 32,
-        rotary_base: float = 10000.0,
-        rotary_interpolation_factor: float = 1.0,
-        encoder_window: Optional[Union[tuple[int, int], list[tuple[int, int]]]] = (16, 4),
-        attn_dropout: float = 0.0,
-        ff_dropout: float = 0.1,
-        adapter_dropout: float = 0.1,
-        adapter_max_positions: int = 4096,
-        adapter_block_size: int = 4,
+        hidden_size: Optional[int] = 320,
+        intermediate_size: Optional[int] = 1280,
+        hidden_act: Optional[str] = "gelu",
+        num_hidden_layers: Optional[int] = 10,
+        num_attention_heads: Optional[int] = 8,
+        num_key_value_heads: Optional[int] = 8,
+        max_position_embeddings: Optional[int] = 4096,
+        attention_dropout: Optional[float] = 0.0,
+        attention_bias: Optional[bool] = False,
         sample_rate: int = 16000,
         frame_ms: float = 5.0,
-        preprocessor_c1: Optional[int] = None,
-        preprocessor_c2: Optional[int] = None,
-        preprocessor_k1: int = 5,
-        preprocessor_k2: int = 5,
-        preprocessor_input_dropout_p: float = 0.1,
-        preprocessor_input_dropout_sigma: float = 0.3,
-        preprocessor_asinh_k_init: float = 0.75,
-        num_tokens_per_sec: float = 6.5,
-        attn_backend: str = "auto",
-        attention_bias: bool = False,
-        pad_head_dim_to_multiple_of: Optional[int] = None,
-        use_cache: bool = True,
-        bos_token_id: int = 1,
-        eos_token_id: int = 2,
-        pad_token_id: int = 0,
-        decoder_start_token_id: Optional[int] = None,
+        sliding_windows: list[tuple[int, int]] = [(16, 4), (16, 4), (16, 0), (16, 0), (16, 4), (16, 4)],
         **kwargs,
     ):
-        if decoder_dim is None:
-            decoder_dim = hidden_size
-        if encoder_dim is None:
-            encoder_dim = decoder_dim
-
-        if encoder_num_attention_heads is None:
-            encoder_num_attention_heads = num_attention_heads
-        if decoder_num_attention_heads is None:
-            decoder_num_attention_heads = num_attention_heads
-
-        if encoder_num_hidden_layers is None:
-            encoder_num_hidden_layers = num_hidden_layers
-        if decoder_num_hidden_layers is None:
-            decoder_num_hidden_layers = num_hidden_layers
-
-        if preprocessor_c1 is None:
-            preprocessor_c1 = 2 * encoder_dim
-        if preprocessor_c2 is None:
-            preprocessor_c2 = encoder_dim
-
-        if decoder_start_token_id is None:
-            decoder_start_token_id = bos_token_id
-
-        self.vocab_size = vocab_size
-        self.encoder_dim = encoder_dim
-        self.decoder_dim = decoder_dim
-        self.head_dim = head_dim
-        self.encoder_num_attention_heads = encoder_num_attention_heads
-        self.decoder_num_attention_heads = decoder_num_attention_heads
-        self.encoder_num_hidden_layers = encoder_num_hidden_layers
-        self.decoder_num_hidden_layers = decoder_num_hidden_layers
-        self.ffn_mult = ffn_mult
-        self.use_swiglu_encoder = use_swiglu_encoder
-        self.use_swiglu_decoder = use_swiglu_decoder
-        self.encoder_rotary_dim = encoder_rotary_dim
-        self.decoder_rotary_dim = decoder_rotary_dim
-        self.rotary_base = rotary_base
-        self.rotary_interpolation_factor = rotary_interpolation_factor
-        if isinstance(encoder_window, list):
-            if len(encoder_window) == 2 and all(isinstance(value, int) for value in encoder_window):
-                encoder_window = tuple(encoder_window)
-            else:
-                encoder_window = [tuple(window) if isinstance(window, list) else window for window in encoder_window]
-        self.encoder_window = encoder_window
-        self.attn_dropout = attn_dropout
-        self.ff_dropout = ff_dropout
-        self.adapter_dropout = adapter_dropout
-        self.adapter_max_positions = adapter_max_positions
-        self.adapter_block_size = adapter_block_size
+        self.hidden_size = hidden_size
+        self.intermediate_size = intermediate_size
+        self.hidden_act = hidden_act
+        self.num_hidden_layers = num_hidden_layers
+        self.num_attention_heads = num_attention_heads
+        self.num_key_value_heads = num_key_value_heads
+        self.max_position_embeddings = max_position_embeddings
+        self.attention_dropout = attention_dropout
+        self.attention_bias = attention_bias
         self.sample_rate = sample_rate
         self.frame_ms = frame_ms
-        self.preprocessor_c1 = preprocessor_c1
-        self.preprocessor_c2 = preprocessor_c2
-        self.preprocessor_k1 = preprocessor_k1
-        self.preprocessor_k2 = preprocessor_k2
-        self.preprocessor_input_dropout_p = preprocessor_input_dropout_p
-        self.preprocessor_input_dropout_sigma = preprocessor_input_dropout_sigma
-        self.preprocessor_asinh_k_init = preprocessor_asinh_k_init
-        self.num_tokens_per_sec = num_tokens_per_sec
-        self.attn_backend = attn_backend
-        self.attention_bias = attention_bias
-        self.pad_head_dim_to_multiple_of = pad_head_dim_to_multiple_of
-        self.use_cache = use_cache
+        self.sliding_windows = sliding_windows
+
+        super().__init__(**kwargs)
+
+
+class MoonshineStreamingConfig(PreTrainedConfig):
+    model_type = "moonshine_streaming"
+    sub_configs = {"encoder_config": MoonshineStreamingEncoderConfig}
+    keys_to_ignore_at_inference = ["past_key_values"]
+
+    def __init__(
+        self,
+        encoder_config: MoonshineStreamingEncoderConfig = None,
+        vocab_size: int = 32768,
+        hidden_size: Optional[int] = 320,
+        intermediate_size: Optional[int] = 1280,
+        num_hidden_layers: Optional[int] = 10,
+        num_attention_heads: Optional[int] = 8,
+        hidden_act: Optional[str] = "silu",
+        max_position_embeddings: int = 4096,
+        use_cache: Optional[bool] = True,
+        pad_token_id: int = 0,
+        bos_token_id: int = 1,
+        eos_token_id: int = 2,
+        rope_parameters: Optional[RopeParameters | dict[str, RopeParameters]] = {"rope_type": "default", "rope_theta": 10000.0, "partial_rotary_factor": 0.8},
+        attention_bias: bool = False,
+        attention_dropout: float = 0.0,
+        decoder_start_token_id: Optional[int] = None, 
+        head_dim: Optional[int] = None,
+        pad_head_dim_to_multiple_of: Optional[int] = None,
+        **kwargs,
+    ):
+        if isinstance(encoder_config, dict):
+            encoder_config["model_type"] = encoder_config.get("model_type", "moonshine_streaming_encoder")
+            encoder_config = CONFIG_MAPPING[encoder_config["model_type"]](**encoder_config)
+        elif encoder_config is None:
+            encoder_config = CONFIG_MAPPING["moonshine_streaming_encoder"]()
+
+        self.encoder_config = encoder_config
         
-        #########################################
-        self.encoder_hidden_size = encoder_dim
-        self.attention_probs_dropout_prob = attn_dropout
-        self.encoder_hidden_act = "gelu"
-        self.decoder_hidden_act = "silu"
-        self.intermediate_size = ffn_mult * decoder_dim
-        self.decoder_num_hidden_layers = num_hidden_layers
-        self.decoder_num_key_value_heads = decoder_num_attention_heads
-        self.decoder_num_attention_heads = decoder_num_attention_heads
-        self.max_position_embeddings = adapter_max_positions
+        self.vocab_size = vocab_size
+        self.max_position_embeddings = max_position_embeddings
+        self.hidden_size = hidden_size
+        self.intermediate_size = intermediate_size
+        self.num_hidden_layers = num_hidden_layers
+        self.num_attention_heads = num_attention_heads
+        self.num_key_value_heads = num_attention_heads
+        self.hidden_act = hidden_act
+        self.use_cache = use_cache
+        self.attention_bias = attention_bias
+        self.attention_dropout = attention_dropout
+        self.head_dim = head_dim if head_dim is not None else self.hidden_size // self.num_attention_heads
+        self.rope_parameters = rope_parameters
+        self.pad_head_dim_to_multiple_of = pad_head_dim_to_multiple_of
 
-        partial_rotary_factor = decoder_rotary_dim / head_dim if head_dim else 1.0
-        self.rope_parameters = {
-            "rope_type": "default",
-            "rope_theta": rotary_base,
-            "partial_rotary_factor": partial_rotary_factor,
-        }
-
-        self.encoder_num_attention_heads = encoder_num_attention_heads
-        self.encoder_num_key_value_heads = encoder_num_attention_heads
-        self.sliding_windows = [(16, 4), (16, 4), (16, 0), (16, 0), (16, 4), (16, 4)]
-        #########################################
-
-
-        kwargs.setdefault("is_encoder_decoder", True)
         super().__init__(
             bos_token_id=bos_token_id,
             eos_token_id=eos_token_id,
             pad_token_id=pad_token_id,
             decoder_start_token_id=decoder_start_token_id,
+            is_encoder_decoder=True,
             **kwargs,
         )
 
 
-__all__ = ["MoonshineStreamingConfig"]
+__all__ = ["MoonshineStreamingConfig", "MoonshineStreamingEncoderConfig"]

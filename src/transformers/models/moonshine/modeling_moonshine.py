@@ -433,18 +433,18 @@ class MoonshineDecoderLayer(GradientCheckpointingLayer):
             config=config,
             layer_idx=layer_idx,
             is_causal=True,
-            num_attention_heads=config.decoder_num_attention_heads,
-            num_key_value_heads=config.decoder_num_key_value_heads,
+            num_attention_heads=config.num_attention_heads,
+            num_key_value_heads=config.num_key_value_heads,
         )
         self.encoder_attn = MoonshineAttention(
             config=config,
             layer_idx=layer_idx,
             is_causal=False,
-            num_attention_heads=config.decoder_num_attention_heads,
-            num_key_value_heads=config.decoder_num_key_value_heads,
+            num_attention_heads=config.num_attention_heads,
+            num_key_value_heads=config.num_key_value_heads,
         )
 
-        self.mlp = MoonshineDecoderMLP(config, config.decoder_hidden_act)
+        self.mlp = MoonshineDecoderMLP(config, config.hidden_act)
         self.input_layernorm = nn.LayerNorm(config.hidden_size, bias=False)
         self.post_attention_layernorm = nn.LayerNorm(config.hidden_size, bias=False)
         self.final_layernorm = nn.LayerNorm(config.hidden_size, bias=False)
@@ -639,9 +639,7 @@ class MoonshineDecoder(MoonshinePreTrainedModel):
         self.vocab_size = config.vocab_size
 
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
-        self.layers = nn.ModuleList(
-            [MoonshineDecoderLayer(config, idx) for idx in range(config.decoder_num_hidden_layers)]
-        )
+        self.layers = nn.ModuleList([MoonshineDecoderLayer(config, idx) for idx in range(config.num_hidden_layers)])
         self.norm = nn.LayerNorm(config.hidden_size, bias=False)
         self.rotary_emb = MoonshineRotaryEmbedding(config=config)
         self.gradient_checkpointing = False

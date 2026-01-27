@@ -48,7 +48,7 @@ from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
 from ...processing_utils import Unpack
 from ...utils import TransformersKwargs, auto_docstring
 from ...utils.generic import can_return_tuple, maybe_autocast
-from .configuration_moonshine_streaming import MoonshineStreamingConfig
+from .configuration_moonshine_streaming import MoonshineStreamingConfig, MoonshineStreamingEncoderConfig
 
 
 @dataclass
@@ -238,9 +238,9 @@ class MoonshineStreamingEncoderLayer(GradientCheckpointingLayer):
         super().__init__()
         self.hidden_size = config.hidden_size
         self.self_attn = MoonshineStreamingEncoderAttention(config, layer_idx)
-        self.mlp = MoonshineStreamingEncoderMLP(config, config.encoder_hidden_act)
-        self.input_layernorm = MoonshineStreamingLayerNorm(config.encoder_hidden_size)
-        self.post_attention_layernorm = MoonshineStreamingLayerNorm(config.encoder_hidden_size)
+        self.mlp = MoonshineStreamingEncoderMLP(config, config.hidden_act)
+        self.input_layernorm = MoonshineStreamingLayerNorm(config.hidden_size)
+        self.post_attention_layernorm = MoonshineStreamingLayerNorm(config.hidden_size)
 
     def forward(
         self,
@@ -282,13 +282,13 @@ class MoonshineStreamingEncoderEmbedder(nn.Module):
         self.cmvn = MoonshineStreamingFrameCMVN()
         self.comp = MoonshineStreamingAsinhCompression()
         self.conv1 = MoonshineStreamingCausalConv1d(
-            config.encoder_hidden_size, config.encoder_hidden_size * 2, kernel_size=5, stride=2
+            config.hidden_size, config.hidden_size * 2, kernel_size=5, stride=2
         )
         self.conv2 = MoonshineStreamingCausalConv1d(
-            config.encoder_hidden_size * 2, config.encoder_hidden_size, kernel_size=5, stride=2
+            config.hidden_size * 2, config.hidden_size, kernel_size=5, stride=2
         )
         self.frame_len = int(round(config.sample_rate * config.frame_ms / 1000.0))
-        self.linear = nn.Linear(self.frame_len, config.encoder_hidden_size, bias=False)
+        self.linear = nn.Linear(self.frame_len, config.hidden_size, bias=False)
 
     def forward(self, input_values, padding_mask=None):
         hidden_states = self.cmvn(input_values.reshape(input_values.shape[0], -1, self.frame_len))
@@ -352,13 +352,15 @@ def sliding_window_mask_function(sliding_window: tuple[int, int], is_causal=True
 
 
 class MoonshineStreamingEncoder(MoonshineStreamingPreTrainedModel):
-    def __init__(self, config):
+    config: MoonshineStreamingEncoderConfig
+
+    def __init__(self, config: MoonshineStreamingEncoderConfig):
         super().__init__(config)
         self.embedder = MoonshineStreamingEncoderEmbedder(config)
         self.layers = nn.ModuleList(
-            [MoonshineStreamingEncoderLayer(config, idx) for idx in range(config.encoder_num_hidden_layers)]
+            [MoonshineStreamingEncoderLayer(config, idx) for idx in range(config.num_hidden_layers)]
         )
-        self.final_norm = MoonshineStreamingLayerNorm(config.encoder_hidden_size)
+        self.final_norm = MoonshineStreamingLayerNorm(config.hidden_size)
         self.gradient_checkpointing = False
 
         self.post_init()
@@ -398,7 +400,7 @@ class MoonshineStreamingEncoder(MoonshineStreamingPreTrainedModel):
                     and_mask_function=sliding_window_mask_function(self.config.sliding_windows[layer_idx]),
                     **mask_kwargs,
                 )
-                for layer_idx in range(self.config.encoder_num_hidden_layers)
+                for layer_idx in range(self.config.num_hidden_layers)
             ]
 
         hidden_states = inputs_embeds
@@ -700,18 +702,18 @@ class MoonshineStreamingDecoderLayer(GradientCheckpointingLayer):
             config=config,
             layer_idx=layer_idx,
             is_causal=True,
-            num_attention_heads=config.decoder_num_attention_heads,
-            num_key_value_heads=config.decoder_num_key_value_heads,
+            num_attention_heads=config.num_attention_heads,
+            num_key_value_heads=config.num_key_value_heads,
         )
         self.encoder_attn = MoonshineStreamingAttention(
             config=config,
             layer_idx=layer_idx,
             is_causal=False,
-            num_attention_heads=config.decoder_num_attention_heads,
-            num_key_value_heads=config.decoder_num_key_value_heads,
+            num_attention_heads=config.num_attention_heads,
+            num_key_value_heads=config.num_key_value_heads,
         )
 
-        self.mlp = MoonshineStreamingDecoderMLP(config, config.decoder_hidden_act)
+        self.mlp = MoonshineStreamingDecoderMLP(config, config.hidden_act)
         self.input_layernorm = nn.LayerNorm(config.hidden_size, bias=False)
         self.post_attention_layernorm = nn.LayerNorm(config.hidden_size, bias=False)
         self.final_layernorm = nn.LayerNorm(config.hidden_size, bias=False)
@@ -781,15 +783,15 @@ class MoonshineStreamingDecoder(MoonshineStreamingPreTrainedModel):
 
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
         self.layers = nn.ModuleList(
-            [MoonshineStreamingDecoderLayer(config, idx) for idx in range(config.decoder_num_hidden_layers)]
+            [MoonshineStreamingDecoderLayer(config, idx) for idx in range(config.num_hidden_layers)]
         )
         self.norm = nn.LayerNorm(config.hidden_size, bias=False)
         self.rotary_emb = MoonshineStreamingRotaryEmbedding(config=config)
         self.gradient_checkpointing = False
-        self.pos_emb = nn.Embedding(config.adapter_max_positions, config.encoder_dim)
+        self.pos_emb = nn.Embedding(config.max_position_embeddings, config.encoder_config.hidden_size)
 
-        if config.encoder_dim != config.decoder_dim:
-            self.proj = nn.Linear(config.encoder_dim, config.decoder_dim, bias=False)
+        if config.encoder_config.hidden_size != config.hidden_size:
+            self.proj = nn.Linear(config.encoder_config.hidden_size, config.hidden_size, bias=False)
         else:
             self.proj = nn.Identity()
 
@@ -883,10 +885,9 @@ class MoonshineStreamingDecoder(MoonshineStreamingPreTrainedModel):
 
 @auto_docstring
 class MoonshineStreamingModel(MoonshineStreamingPreTrainedModel):
-    def __init__(self, config: MoonshineStreamingConfig):
+    def __init__(self, config):
         super().__init__(config)
-
-        self.encoder = MoonshineStreamingEncoder(config)
+        self.encoder = MoonshineStreamingEncoder(config.encoder_config)
         self.decoder = MoonshineStreamingDecoder(config)
         # Initialize weights and apply final processing
         self.post_init()
