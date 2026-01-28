@@ -52,7 +52,7 @@ class MoonshineStreamingEncoderConfig(PreTrainedConfig):
         self.head_dim = head_dim if head_dim is not None else self.hidden_size // self.num_attention_heads
         self.sample_rate = sample_rate
         self.frame_ms = frame_ms
-        self.sliding_windows = sliding_windows
+        self.sliding_windows = [list(window) for window in sliding_windows]
 
         super().__init__(**kwargs)
 
@@ -67,6 +67,7 @@ class MoonshineStreamingConfig(PreTrainedConfig):
         encoder_config: MoonshineStreamingEncoderConfig = None,
         vocab_size: int = 32768,
         hidden_size: Optional[int] = 320,
+        encoder_hidden_size: Optional[int] = None,
         intermediate_size: Optional[int] = 1280,
         num_hidden_layers: Optional[int] = 6,
         num_attention_heads: Optional[int] = 8,
@@ -88,6 +89,7 @@ class MoonshineStreamingConfig(PreTrainedConfig):
         pad_head_dim_to_multiple_of: Optional[int] = None,
         **kwargs,
     ):
+        encoder_config_is_none = encoder_config is None
         if isinstance(encoder_config, dict):
             encoder_config["model_type"] = encoder_config.get("model_type", "moonshine_streaming_encoder")
             encoder_config = CONFIG_MAPPING[encoder_config["model_type"]](**encoder_config)
@@ -95,6 +97,10 @@ class MoonshineStreamingConfig(PreTrainedConfig):
             encoder_config = CONFIG_MAPPING["moonshine_streaming_encoder"]()
 
         self.encoder_config = encoder_config
+        if encoder_hidden_size is None:
+            encoder_hidden_size = hidden_size if encoder_config_is_none else self.encoder_config.hidden_size
+        self.encoder_hidden_size = encoder_hidden_size
+        self.encoder_config.hidden_size = encoder_hidden_size
 
         self.vocab_size = vocab_size
         self.max_position_embeddings = max_position_embeddings

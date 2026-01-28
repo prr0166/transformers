@@ -46,7 +46,7 @@ class MoonshineStreamingModelTester:
         self,
         parent,
         batch_size=3,  # need batch_size != num_hidden_layers
-        seq_length=1000,
+        seq_length=1040,
         is_training=False,
         use_labels=False,
         vocab_size=147,
@@ -436,9 +436,9 @@ class MoonshineStreamingModelTest(ModelTesterMixin, PipelineTesterMixin, unittes
 @require_torch
 class MoonshineStreamingModelIntegrationTests(unittest.TestCase):
     def setUp(self):
-        self.processor_tiny = AutoProcessor.from_pretrained("eustlb/moonshine-streaming-tiny")
-        self.processor_small = AutoProcessor.from_pretrained("eustlb/moonshine-streaming-small")
-        self.processor_medium = AutoProcessor.from_pretrained("eustlb/moonshine-streaming-medium")
+        self.processor_tiny = AutoProcessor.from_pretrained("UsefulSensors/moonshine-streaming-tiny")
+        self.processor_small = AutoProcessor.from_pretrained("UsefulSensors/moonshine-streaming-small")
+        self.processor_medium = AutoProcessor.from_pretrained("UsefulSensors/moonshine-streaming-medium")
 
     def tearDown(self):
         cleanup(torch_device, gc_collect=True)
@@ -452,7 +452,7 @@ class MoonshineStreamingModelIntegrationTests(unittest.TestCase):
 
     @slow
     def test_tiny_logits_single(self):
-        model = MoonshineStreamingForConditionalGeneration.from_pretrained("eustlb/moonshine-streaming-tiny")
+        model = MoonshineStreamingForConditionalGeneration.from_pretrained("UsefulSensors/moonshine-streaming-tiny")
         model.to(torch_device)
 
         inputs = self.processor_tiny(self._load_datasamples(1), sampling_rate=16000)
@@ -473,7 +473,7 @@ class MoonshineStreamingModelIntegrationTests(unittest.TestCase):
 
     @slow
     def test_small_logits_single(self):
-        model = MoonshineStreamingForConditionalGeneration.from_pretrained("eustlb/moonshine-streaming-small")
+        model = MoonshineStreamingForConditionalGeneration.from_pretrained("UsefulSensors/moonshine-streaming-small")
         model.to(torch_device)
 
         inputs = self.processor_small(self._load_datasamples(1), sampling_rate=16000)
@@ -494,7 +494,7 @@ class MoonshineStreamingModelIntegrationTests(unittest.TestCase):
 
     @slow
     def test_medium_logits_single(self):
-        model = MoonshineStreamingForConditionalGeneration.from_pretrained("eustlb/moonshine-streaming-medium")
+        model = MoonshineStreamingForConditionalGeneration.from_pretrained("UsefulSensors/moonshine-streaming-medium")
         model.to(torch_device)
 
         inputs = self.processor_medium(self._load_datasamples(1), sampling_rate=16000)
@@ -515,7 +515,7 @@ class MoonshineStreamingModelIntegrationTests(unittest.TestCase):
 
     @slow
     def test_tiny_logits_batch(self):
-        model = MoonshineStreamingForConditionalGeneration.from_pretrained("eustlb/moonshine-streaming-tiny")
+        model = MoonshineStreamingForConditionalGeneration.from_pretrained("UsefulSensors/moonshine-streaming-tiny")
         model.to(torch_device)
 
         inputs = self.processor_tiny(self._load_datasamples(4), sampling_rate=16000)
@@ -535,7 +535,7 @@ class MoonshineStreamingModelIntegrationTests(unittest.TestCase):
 
     @slow
     def test_small_logits_batch(self):
-        model = MoonshineStreamingForConditionalGeneration.from_pretrained("eustlb/moonshine-streaming-small")
+        model = MoonshineStreamingForConditionalGeneration.from_pretrained("UsefulSensors/moonshine-streaming-small")
         model.to(torch_device)
 
         inputs = self.processor_small(self._load_datasamples(4), sampling_rate=16000)
@@ -556,7 +556,7 @@ class MoonshineStreamingModelIntegrationTests(unittest.TestCase):
 
     @slow
     def test_medium_logits_batch(self):
-        model = MoonshineStreamingForConditionalGeneration.from_pretrained("eustlb/moonshine-streaming-medium")
+        model = MoonshineStreamingForConditionalGeneration.from_pretrained("UsefulSensors/moonshine-streaming-medium")
         model.to(torch_device)
 
         inputs = self.processor_medium(self._load_datasamples(4), sampling_rate=16000)
@@ -577,7 +577,7 @@ class MoonshineStreamingModelIntegrationTests(unittest.TestCase):
 
     @slow
     def test_tiny_generation_single(self):
-        model = MoonshineStreamingForConditionalGeneration.from_pretrained("eustlb/moonshine-streaming-tiny")
+        model = MoonshineStreamingForConditionalGeneration.from_pretrained("UsefulSensors/moonshine-streaming-tiny")
         model.to(torch_device)
 
         audio_array = self._load_datasamples(1)
@@ -591,7 +591,7 @@ class MoonshineStreamingModelIntegrationTests(unittest.TestCase):
 
     @slow
     def test_small_generation_single(self):
-        model = MoonshineStreamingForConditionalGeneration.from_pretrained("eustlb/moonshine-streaming-small")
+        model = MoonshineStreamingForConditionalGeneration.from_pretrained("UsefulSensors/moonshine-streaming-small")
         model.to(torch_device)
 
         audio_array = self._load_datasamples(1)
@@ -605,7 +605,7 @@ class MoonshineStreamingModelIntegrationTests(unittest.TestCase):
 
     @slow
     def test_medium_generation_single(self):
-        model = MoonshineStreamingForConditionalGeneration.from_pretrained("eustlb/moonshine-streaming-medium")
+        model = MoonshineStreamingForConditionalGeneration.from_pretrained("UsefulSensors/moonshine-streaming-medium")
         model.to(torch_device)
 
         audio_array = self._load_datasamples(1)
@@ -619,7 +619,7 @@ class MoonshineStreamingModelIntegrationTests(unittest.TestCase):
 
     @slow
     def test_tiny_generation_batch(self):
-        model = MoonshineStreamingForConditionalGeneration.from_pretrained("eustlb/moonshine-streaming-tiny")
+        model = MoonshineStreamingForConditionalGeneration.from_pretrained("UsefulSensors/moonshine-streaming-tiny")
         model.to(torch_device)
 
         audio_array = self._load_datasamples(4)
@@ -641,7 +641,7 @@ class MoonshineStreamingModelIntegrationTests(unittest.TestCase):
 
     @slow
     def test_small_generation_batch(self):
-        model = MoonshineStreamingForConditionalGeneration.from_pretrained("eustlb/moonshine-streaming-small")
+        model = MoonshineStreamingForConditionalGeneration.from_pretrained("UsefulSensors/moonshine-streaming-small")
         model.to(torch_device)
 
         audio_array = self._load_datasamples(4)
@@ -663,7 +663,7 @@ class MoonshineStreamingModelIntegrationTests(unittest.TestCase):
 
     @slow
     def test_medium_generation_batch(self):
-        model = MoonshineStreamingForConditionalGeneration.from_pretrained("eustlb/moonshine-streaming-medium")
+        model = MoonshineStreamingForConditionalGeneration.from_pretrained("UsefulSensors/moonshine-streaming-medium")
         model.to(torch_device)
 
         audio_array = self._load_datasamples(4)

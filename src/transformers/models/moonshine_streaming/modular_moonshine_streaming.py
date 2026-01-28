@@ -21,7 +21,7 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-from transformers.utils.generic import check_model_inputs
+from transformers.utils.generic import OutputRecorder, check_model_inputs
 
 from ...cache_utils import Cache
 from ...masking_utils import create_bidirectional_mask
@@ -46,6 +46,16 @@ from .configuration_moonshine_streaming import MoonshineStreamingConfig, Moonshi
 
 
 logger = logging.get_logger(__name__)
+
+
+def _moonshine_streaming_feat_extract_output_lengths(
+    config: MoonshineStreamingConfig, input_lengths: torch.LongTensor
+) -> torch.LongTensor:
+    frame_len = int(round(config.encoder_config.sample_rate * config.encoder_config.frame_ms / 1000.0))
+    output_lengths = input_lengths // frame_len
+    output_lengths = (output_lengths - 1) // 2 + 1
+    output_lengths = (output_lengths - 1) // 2 + 1
+    return output_lengths
 
 
 class MoonshineStreamingProcessorKwargs(ProcessingKwargs, total=False):
@@ -116,7 +126,9 @@ class MoonshineStreamingCausalConv1d(nn.Conv1d):
             mask = mask > 0
             x *= mask
 
-        return x, mask.squeeze(1)
+        if mask is not None:
+            mask = mask.squeeze(1)
+        return x, mask
 
 
 class MoonshineStreamingLayerNorm(nn.Module):
@@ -239,6 +251,9 @@ class MoonshineStreamingEncoderEmbedder(nn.Module):
 class MoonshineStreamingPreTrainedModel(MoonshinePreTrainedModel):
     supports_gradient_checkpointing = False  # TODO: check
 
+    def _get_feat_extract_output_lengths(self, input_lengths: torch.LongTensor) -> torch.LongTensor:
+        return _moonshine_streaming_feat_extract_output_lengths(self.config, input_lengths)
+
 
 def sliding_window_mask_function(sliding_window: tuple[int, int], is_causal=True) -> Callable:
     """
@@ -258,6 +273,10 @@ def sliding_window_mask_function(sliding_window: tuple[int, int], is_causal=True
 
 class MoonshineStreamingEncoder(MoonshineStreamingPreTrainedModel):
     config: MoonshineStreamingEncoderConfig
+    _can_record_outputs = {
+        "attentions": OutputRecorder(MoonshineStreamingEncoderAttention, index=1, layer_name="self_attn"),
+        "hidden_states": MoonshineStreamingEncoderLayer,
+    }
 
     def __init__(self, config: MoonshineStreamingEncoderConfig):
         super().__init__(config)
@@ -307,6 +326,8 @@ class MoonshineStreamingEncoder(MoonshineStreamingPreTrainedModel):
                 )
                 for layer_idx in range(self.config.num_hidden_layers)
             ]
+        else:
+            per_layer_attention_mask = [None] * self.config.num_hidden_layers
 
         hidden_states = inputs_embeds
         for layer_idx, encoder_layer in enumerate(self.layers):
@@ -326,11 +347,15 @@ class MoonshinMoonshineStreamingDecoderMLP(LlamaMLP): ...
 
 class MoonshineStreamingDecoder(MoonshineDecoder):
     def __init__(self, config):
+        encoder_config = config.encoder_config
+        config = config.get_text_config(decoder=True)
+        config.num_key_value_heads = config.num_attention_heads
         super().__init__(config)
-        self.pos_emb = nn.Embedding(config.max_position_embeddings, config.encoder_config.hidden_size)
+        encoder_hidden_size = encoder_config.hidden_size
+        self.pos_emb = nn.Embedding(self.config.max_position_embeddings, encoder_hidden_size)
 
-        if config.encoder_config.hidden_size != config.hidden_size:
-            self.proj = nn.Linear(config.encoder_config.hidden_size, config.hidden_size, bias=False)
+        if encoder_hidden_size != self.config.hidden_size:
+            self.proj = nn.Linear(encoder_hidden_size, self.config.hidden_size, bias=False)
         else:
             self.proj = nn.Identity()
 
@@ -358,7 +383,9 @@ class MoonshineStreamingDecoder(MoonshineDecoder):
             - 0 for tokens that are **masked**.
             [What are attention masks?](../glossary#attention-mask)
         """
-        position_embeddings = self.pos_emb(torch.arange(encoder_hidden_states.shape[1], device=input_ids.device))
+        position_embeddings = self.pos_emb(
+            torch.arange(encoder_hidden_states.shape[1], device=encoder_hidden_states.device)
+        )
         encoder_hidden_states += position_embeddings
         encoder_hidden_states = self.proj(encoder_hidden_states)
 
@@ -378,22 +405,30 @@ class MoonshineStreamingDecoder(MoonshineDecoder):
 
 class MoonshineStreamingModel(MoonshineModel):
     def __init__(self, config):
+        encoder_config = config.encoder_config
+        if hasattr(config, "encoder_num_hidden_layers"):
+            encoder_config.num_hidden_layers = config.encoder_num_hidden_layers
+        if hasattr(config, "encoder_num_attention_heads"):
+            encoder_config.num_attention_heads = config.encoder_num_attention_heads
+            encoder_config.num_key_value_heads = config.encoder_num_attention_heads
+        if hasattr(config, "head_dim"):
+            encoder_config.head_dim = config.head_dim
+        if hasattr(config, "encoder_hidden_size"):
+            encoder_config.hidden_size = config.encoder_hidden_size
+        if hasattr(config, "ffn_mult"):
+            encoder_config.intermediate_size = encoder_config.hidden_size * config.ffn_mult
         super().__init__(config)
-        self.encoder = MoonshineStreamingEncoder(config.encoder_config)
+        self.encoder = MoonshineStreamingEncoder(encoder_config)
         self.decoder = MoonshineStreamingDecoder(config)
+        self.encoder.config.output_attentions = self.config.output_attentions
+        self.encoder.config.output_hidden_states = self.config.output_hidden_states
+        self.decoder.config.output_attentions = self.config.output_attentions
+        self.decoder.config.output_hidden_states = self.config.output_hidden_states
 
 
 class MoonshineStreamingForConditionalGeneration(MoonshineForConditionalGeneration):
     def _get_feat_extract_output_lengths(self, input_lengths: torch.LongTensor) -> torch.LongTensor:
-        """
-        Computes the output length of the convolutional layers for MoonshineStreaming.
-        Different from Moonshine due to frame-based preprocessing with causal convolutions.
-        """
-        frame_len = int(round(self.config.sample_rate * self.config.frame_ms / 1000.0))
-        output_lengths = input_lengths // frame_len
-        output_lengths = (output_lengths - 1) // 2 + 1
-        output_lengths = (output_lengths - 1) // 2 + 1
-        return output_lengths
+        return _moonshine_streaming_feat_extract_output_lengths(self.config, input_lengths)
 
 
 __all__ = [
