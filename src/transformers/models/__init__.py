@@ -157,6 +157,7 @@ if TYPE_CHECKING:
     from .glm4v_moe import *
     from .glm46v import *
     from .glm_image import *
+    from .glm_ocr import *
     from .glmasr import *
     from .glpn import *
     from .got_ocr2 import *
@@ -306,6 +307,7 @@ if TYPE_CHECKING:
     from .plbart import *
     from .poolformer import *
     from .pop2piano import *
+    from .pp_doclayout_v3 import *
     from .prompt_depth_anything import *
     from .prophetnet import *
     from .pvt import *
@@ -427,6 +429,7 @@ if TYPE_CHECKING:
     from .xmod import *
     from .yolos import *
     from .yoso import *
+    from .youtu import *
     from .zamba import *
     from .zamba2 import *
     from .zoedepth import *
