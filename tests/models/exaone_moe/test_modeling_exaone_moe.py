@@ -52,7 +52,7 @@ class ExaoneMoeModelTest(CausalLMModelTest, unittest.TestCase):
 
 @require_torch
 class ExaoneMoeIntegrationTest(unittest.TestCase):
-    TEST_MODEL_ID = "LGAI-EXAONE/K-EXAONE-236B-A23B"
+    TEST_MODEL_ID = "nuxlear/EXAONE-MoE-Dummy-7B-A1B"
 
     @classmethod
     def setUpClass(cls):
@@ -90,41 +90,37 @@ class ExaoneMoeIntegrationTest(unittest.TestCase):
             out = model(input_ids).logits.float().cpu()
 
         EXPECTED_MEAN = torch.tensor(
-            [[80.0818, 51.8579, 94.5935, 94.4710, 95.2955, 104.5337, 104.0203, 108.6814, 105.7278, 113.6849]]
+            [[-2.2473, -3.0852, -3.2247, -3.2703, -3.1788, -3.4018, -3.1170, -3.2592, -3.8799, -0.6852]]
         )
         EXPECTED_SLICE = torch.tensor(
-            [86.0000, 80.5000, 88.0000, 81.5000, 90.5000, 89.0000, 87.5000, 88.5000, 87.0000, 89.0000]
+            [-2.3906, -3.0312, 2.6875, -3.0156, 0.4980, -1.4375, -1.8672, -2.6719, -1.7656, -2.0938]
         )
         torch.testing.assert_close(out.mean(-1), EXPECTED_MEAN, atol=1e-2, rtol=1e-2)
         torch.testing.assert_close(out[0, 0, :10], EXPECTED_SLICE, atol=1e-4, rtol=1e-4)
 
     @slow
     def test_model_generation_sdpa(self):
-        EXPECTED_TEXT = '<|user|>\nTell me about the Miracle on the Han river.<|endofturn|>\n<|assistant|>\n<think>\n\n</think>\n\nThe "Miracle on the Han River" refers to the rapid and remarkable economic transformation of South Korea (Republic of'
-        prompt = "Tell me about the Miracle on the Han river."
+        EXPECTED_TEXT = "The deep learning is 100% accurate.\n\nThe 100% accurate is 100%"
+        prompt = "The deep learning is "
         tokenizer = AutoTokenizer.from_pretrained(self.TEST_MODEL_ID)
         model = self.get_model()
 
-        messages = [{"role": "user", "content": prompt}]
-        input_ids = tokenizer.apply_chat_template(
-            messages, add_generation_prompt=True, tokenize=True, return_tensors="pt", enable_thinking=False
-        )
-        input_ids = input_ids.to(model.model.embed_tokens.weight.device)
+        input_ids = tokenizer(prompt, return_tensors="pt").to(model.model.embed_tokens.weight.device)
 
         with torch.no_grad():
-            generated_ids = model.generate(**input_ids, max_new_tokens=20, do_sample=False)
+            generated_ids = model.generate(input_ids, max_new_tokens=20, do_sample=False)
         text = tokenizer.decode(generated_ids[0], skip_special_tokens=False)
         self.assertEqual(EXPECTED_TEXT, text)
 
     @slow
     @require_torch_large_accelerator
     def test_model_generation_beyond_sliding_window_flash(self):
-        EXPECTED_OUTPUT_TOKEN_IDS = [21605, 2711]
-        input_ids = [72861, 2711] * 2048
+        EXPECTED_OUTPUT_TOKEN_IDS = [373, 686, 373, 115708, 373, 885]
+        input_ids = [72861, 2711] + [21605, 2711] * 2048
         model = self.get_model()
         model.config._attn_implementation = "flash_attention_2"
         input_ids = torch.tensor([input_ids]).to(model.model.embed_tokens.weight.device)
 
         with torch.no_grad():
-            generated_ids = model.generate(input_ids, max_new_tokens=4, do_sample=False)
-        self.assertEqual(EXPECTED_OUTPUT_TOKEN_IDS, generated_ids[0][-2:].tolist())
+            generated_ids = model.generate(input_ids, max_new_tokens=6, do_sample=False)
+        self.assertEqual(EXPECTED_OUTPUT_TOKEN_IDS, generated_ids[0][-6:].tolist())
