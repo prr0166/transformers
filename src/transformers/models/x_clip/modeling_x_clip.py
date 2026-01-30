@@ -32,11 +32,10 @@ from ...utils import (
     ModelOutput,
     TransformersKwargs,
     auto_docstring,
-    can_return_tuple,
     logging,
     torch_int,
 )
-from ...utils.generic import check_model_inputs, is_flash_attention_requested
+from ...utils.generic import OutputRecorder, check_model_inputs, is_flash_attention_requested
 from .configuration_x_clip import XCLIPConfig, XCLIPTextConfig, XCLIPVisionConfig
 
 
@@ -429,7 +428,7 @@ class XCLIPVisionEncoderLayer(GradientCheckpointingLayer):
         attention_mask: torch.Tensor,
         causal_attention_mask: torch.Tensor,
         **kwargs: Unpack[TransformersKwargs],
-    ) -> torch.FloatTensor:
+    ) -> tuple[torch.FloatTensor, torch.Tensor | None]:
         batch_time, seq_length, hidden_size = hidden_states.size()
         batch_size = batch_time // self.num_frames
         msg_token = self.message_fc(hidden_states[:, 0, :])
@@ -444,7 +443,7 @@ class XCLIPVisionEncoderLayer(GradientCheckpointingLayer):
         residual = hidden_states
 
         hidden_states = self.layer_norm1(hidden_states)
-        hidden_states, _ = self.self_attn(
+        hidden_states, attn_weights = self.self_attn(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
             causal_attention_mask=causal_attention_mask,
@@ -459,7 +458,7 @@ class XCLIPVisionEncoderLayer(GradientCheckpointingLayer):
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
 
-        return hidden_states
+        return hidden_states, attn_weights
 
 
 @auto_docstring
@@ -469,8 +468,15 @@ class XCLIPPreTrainedModel(PreTrainedModel):
     input_modalities = ("image", "text")
     supports_gradient_checkpointing = True
     _can_record_outputs = {
-        "hidden_states": XCLIPEncoderLayer,
-        "attentions": XCLIPAttention,
+        "hidden_states": [
+            OutputRecorder(XCLIPEncoderLayer, layer_name="text_model"),
+            XCLIPVisionEncoderLayer,
+        ],
+        "attentions": [
+            OutputRecorder(XCLIPEncoderLayer, layer_name="text_model", index=1),
+            OutputRecorder(XCLIPVisionEncoderLayer, index=1),
+            OutputRecorder(XCLIPEncoderLayer, layer_name="__never__", index=1), # hack to try and pass this layer
+        ],
     }
 
     @torch.no_grad()
@@ -738,7 +744,7 @@ class XCLIPVisionEncoder(nn.Module):
                 causal_attention_mask,
                 **kwargs,
             )
-            hidden_states = layer_outputs
+            hidden_states = layer_outputs[0]
 
         return BaseModelOutput(last_hidden_state=hidden_states)
 
@@ -1097,7 +1103,7 @@ class XCLIPModel(XCLIPPreTrainedModel):
 
         return text_outputs
 
-    @can_return_tuple
+    @check_model_inputs(tie_last_hidden_states=False)
     @auto_docstring
     def get_video_features(
         self,
