@@ -48,16 +48,6 @@ from .configuration_moonshine_streaming import MoonshineStreamingConfig, Moonshi
 logger = logging.get_logger(__name__)
 
 
-def _moonshine_streaming_feat_extract_output_lengths(
-    config: MoonshineStreamingConfig, input_lengths: torch.LongTensor
-) -> torch.LongTensor:
-    frame_len = int(round(config.encoder_config.sample_rate * config.encoder_config.frame_ms / 1000.0))
-    output_lengths = input_lengths // frame_len
-    output_lengths = (output_lengths - 1) // 2 + 1
-    output_lengths = (output_lengths - 1) // 2 + 1
-    return output_lengths
-
-
 class MoonshineStreamingProcessorKwargs(ProcessingKwargs, total=False):
     _defaults = {
         "audio_kwargs": {
@@ -252,7 +242,11 @@ class MoonshineStreamingPreTrainedModel(MoonshinePreTrainedModel):
     supports_gradient_checkpointing = False  # TODO: check
 
     def _get_feat_extract_output_lengths(self, input_lengths: torch.LongTensor) -> torch.LongTensor:
-        return _moonshine_streaming_feat_extract_output_lengths(self.config, input_lengths)
+        frame_len = int(round(self.config.encoder_config.sample_rate * self.config.encoder_config.frame_ms / 1000.0))
+        output_lengths = input_lengths // frame_len
+        output_lengths = (output_lengths - 1) // 2 + 1
+        output_lengths = (output_lengths - 1) // 2 + 1
+        return output_lengths
 
 
 def sliding_window_mask_function(sliding_window: tuple[int, int], is_causal=True) -> Callable:
@@ -350,6 +344,7 @@ class MoonshineStreamingDecoder(MoonshineDecoder):
         encoder_config = config.encoder_config
         config = config.get_text_config(decoder=True)
         config.num_key_value_heads = config.num_attention_heads
+        config.decoder_hidden_act = config.hidden_act
         super().__init__(config)
         encoder_hidden_size = encoder_config.hidden_size
         self.pos_emb = nn.Embedding(self.config.max_position_embeddings, encoder_hidden_size)
@@ -405,20 +400,8 @@ class MoonshineStreamingDecoder(MoonshineDecoder):
 
 class MoonshineStreamingModel(MoonshineModel):
     def __init__(self, config):
-        encoder_config = config.encoder_config
-        if hasattr(config, "encoder_num_hidden_layers"):
-            encoder_config.num_hidden_layers = config.encoder_num_hidden_layers
-        if hasattr(config, "encoder_num_attention_heads"):
-            encoder_config.num_attention_heads = config.encoder_num_attention_heads
-            encoder_config.num_key_value_heads = config.encoder_num_attention_heads
-        if hasattr(config, "head_dim"):
-            encoder_config.head_dim = config.head_dim
-        if hasattr(config, "encoder_hidden_size"):
-            encoder_config.hidden_size = config.encoder_hidden_size
-        if hasattr(config, "ffn_mult"):
-            encoder_config.intermediate_size = encoder_config.hidden_size * config.ffn_mult
         super().__init__(config)
-        self.encoder = MoonshineStreamingEncoder(encoder_config)
+        self.encoder = MoonshineStreamingEncoder(config.encoder_config)
         self.decoder = MoonshineStreamingDecoder(config)
         self.encoder.config.output_attentions = self.config.output_attentions
         self.encoder.config.output_hidden_states = self.config.output_hidden_states
@@ -426,9 +409,7 @@ class MoonshineStreamingModel(MoonshineModel):
         self.decoder.config.output_hidden_states = self.config.output_hidden_states
 
 
-class MoonshineStreamingForConditionalGeneration(MoonshineForConditionalGeneration):
-    def _get_feat_extract_output_lengths(self, input_lengths: torch.LongTensor) -> torch.LongTensor:
-        return _moonshine_streaming_feat_extract_output_lengths(self.config, input_lengths)
+class MoonshineStreamingForConditionalGeneration(MoonshineForConditionalGeneration): ...
 
 
 __all__ = [

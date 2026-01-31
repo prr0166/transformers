@@ -71,7 +71,11 @@ class MoonshineStreamingConfig(PreTrainedConfig):
         intermediate_size: Optional[int] = 1280,
         num_hidden_layers: Optional[int] = 6,
         num_attention_heads: Optional[int] = 8,
+        encoder_num_hidden_layers: Optional[int] = None,
+        encoder_num_attention_heads: Optional[int] = None,
+        encoder_num_key_value_heads: Optional[int] = None,
         hidden_act: Optional[str] = "silu",
+        decoder_hidden_act: Optional[str] = "silu",
         max_position_embeddings: int = 4096,
         use_cache: Optional[bool] = True,
         pad_token_id: int = 0,
@@ -87,6 +91,7 @@ class MoonshineStreamingConfig(PreTrainedConfig):
         decoder_start_token_id: Optional[int] = None,
         head_dim: Optional[int] = None,
         pad_head_dim_to_multiple_of: Optional[int] = None,
+        ffn_mult: Optional[int] = None,
         **kwargs,
     ):
         encoder_config_is_none = encoder_config is None
@@ -101,6 +106,10 @@ class MoonshineStreamingConfig(PreTrainedConfig):
             encoder_hidden_size = hidden_size if encoder_config_is_none else self.encoder_config.hidden_size
         self.encoder_hidden_size = encoder_hidden_size
         self.encoder_config.hidden_size = encoder_hidden_size
+        self.encoder_num_hidden_layers = encoder_num_hidden_layers
+        self.encoder_num_attention_heads = encoder_num_attention_heads
+        self.encoder_num_key_value_heads = encoder_num_key_value_heads
+        self.ffn_mult = ffn_mult
 
         self.vocab_size = vocab_size
         self.max_position_embeddings = max_position_embeddings
@@ -110,12 +119,25 @@ class MoonshineStreamingConfig(PreTrainedConfig):
         self.num_attention_heads = num_attention_heads
         self.num_key_value_heads = num_attention_heads
         self.hidden_act = hidden_act
+        self.decoder_hidden_act = decoder_hidden_act
         self.use_cache = use_cache
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
         self.head_dim = head_dim if head_dim is not None else self.hidden_size // self.num_attention_heads
         self.rope_parameters = rope_parameters
         self.pad_head_dim_to_multiple_of = pad_head_dim_to_multiple_of
+        if encoder_num_hidden_layers is not None:
+            self.encoder_config.num_hidden_layers = encoder_num_hidden_layers
+        if encoder_num_attention_heads is not None:
+            self.encoder_config.num_attention_heads = encoder_num_attention_heads
+            if encoder_num_key_value_heads is None:
+                self.encoder_config.num_key_value_heads = encoder_num_attention_heads
+        if encoder_num_key_value_heads is not None:
+            self.encoder_config.num_key_value_heads = encoder_num_key_value_heads
+        if head_dim is not None:
+            self.encoder_config.head_dim = head_dim
+        if ffn_mult is not None:
+            self.encoder_config.intermediate_size = self.encoder_config.hidden_size * ffn_mult
 
         kwargs.update(tie_word_embeddings=False, is_encoder_decoder=True)
         super().__init__(

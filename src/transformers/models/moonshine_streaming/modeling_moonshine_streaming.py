@@ -312,16 +312,6 @@ class MoonshineStreamingEncoderEmbedder(nn.Module):
         return hidden_states, padding_mask
 
 
-def _moonshine_streaming_feat_extract_output_lengths(
-    config: MoonshineStreamingConfig, input_lengths: torch.LongTensor
-) -> torch.LongTensor:
-    frame_len = int(round(config.encoder_config.sample_rate * config.encoder_config.frame_ms / 1000.0))
-    output_lengths = input_lengths // frame_len
-    output_lengths = (output_lengths - 1) // 2 + 1
-    output_lengths = (output_lengths - 1) // 2 + 1
-    return output_lengths
-
-
 @auto_docstring
 class MoonshineStreamingPreTrainedModel(PreTrainedModel):
     config: MoonshineStreamingConfig
@@ -340,7 +330,11 @@ class MoonshineStreamingPreTrainedModel(PreTrainedModel):
         """
         Computes the output length of the convolutional layers
         """
-        return _moonshine_streaming_feat_extract_output_lengths(self.config, input_lengths)
+        frame_len = int(round(self.config.encoder_config.sample_rate * self.config.encoder_config.frame_ms / 1000.0))
+        output_lengths = input_lengths // frame_len
+        output_lengths = (output_lengths - 1) // 2 + 1
+        output_lengths = (output_lengths - 1) // 2 + 1
+        return output_lengths
 
 
 def sliding_window_mask_function(sliding_window: tuple[int, int], is_causal=True) -> Callable:
@@ -727,7 +721,7 @@ class MoonshineStreamingDecoderLayer(GradientCheckpointingLayer):
             num_key_value_heads=config.num_key_value_heads,
         )
 
-        self.mlp = MoonshineStreamingDecoderMLP(config, config.hidden_act)
+        self.mlp = MoonshineStreamingDecoderMLP(config, config.decoder_hidden_act)
         self.input_layernorm = nn.LayerNorm(config.hidden_size, bias=False)
         self.post_attention_layernorm = nn.LayerNorm(config.hidden_size, bias=False)
         self.final_layernorm = nn.LayerNorm(config.hidden_size, bias=False)
@@ -795,6 +789,7 @@ class MoonshineStreamingDecoder(MoonshineStreamingPreTrainedModel):
         encoder_config = config.encoder_config
         config = config.get_text_config(decoder=True)
         config.num_key_value_heads = config.num_attention_heads
+        config.decoder_hidden_act = config.hidden_act
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
 
@@ -907,19 +902,7 @@ class MoonshineStreamingDecoder(MoonshineStreamingPreTrainedModel):
 class MoonshineStreamingModel(MoonshineStreamingPreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
-        encoder_config = config.encoder_config
-        if hasattr(config, "encoder_num_hidden_layers"):
-            encoder_config.num_hidden_layers = config.encoder_num_hidden_layers
-        if hasattr(config, "encoder_num_attention_heads"):
-            encoder_config.num_attention_heads = config.encoder_num_attention_heads
-            encoder_config.num_key_value_heads = config.encoder_num_attention_heads
-        if hasattr(config, "head_dim"):
-            encoder_config.head_dim = config.head_dim
-        if hasattr(config, "encoder_hidden_size"):
-            encoder_config.hidden_size = config.encoder_hidden_size
-        if hasattr(config, "ffn_mult"):
-            encoder_config.intermediate_size = encoder_config.hidden_size * config.ffn_mult
-        self.encoder = MoonshineStreamingEncoder(encoder_config)
+        self.encoder = MoonshineStreamingEncoder(config.encoder_config)
         self.decoder = MoonshineStreamingDecoder(config)
         self.encoder.config.output_attentions = self.config.output_attentions
         self.encoder.config.output_hidden_states = self.config.output_hidden_states
@@ -1150,9 +1133,6 @@ class MoonshineStreamingForConditionalGeneration(MoonshineStreamingPreTrainedMod
             encoder_hidden_states=outputs.encoder_hidden_states,
             encoder_attentions=outputs.encoder_attentions,
         )
-
-    def _get_feat_extract_output_lengths(self, input_lengths: torch.LongTensor) -> torch.LongTensor:
-        return _moonshine_streaming_feat_extract_output_lengths(self.config, input_lengths)
 
 
 __all__ = [
