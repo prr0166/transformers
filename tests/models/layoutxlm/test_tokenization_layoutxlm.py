@@ -178,6 +178,9 @@ class LayoutXLMTokenizationTest(TokenizerTesterMixin, unittest.TestCase):
                 encoded = tokenizer.encode(words, boxes=boxes)
                 self.assertIsInstance(encoded, list)
 
+    def test_foo(self):
+        assert 1 == 2
+
     def test_bos_token_with_add_bos_token_false(self):
         # LayoutXLM requires pretokenized input with boxes
         tokenizers = self.get_tokenizers()
