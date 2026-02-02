@@ -17,7 +17,7 @@
 import copy
 import unittest
 
-from transformers import MoonshineStreamingConfig, is_torch_available
+from transformers import MoonshineStreamingConfig, MoonshineStreamingEncoderConfig, is_torch_available
 from transformers.testing_utils import cleanup, require_torch, slow, torch_device
 
 from ...test_configuration_common import ConfigTester
@@ -94,15 +94,21 @@ class MoonshineStreamingModelTester:
         return config, input_values, attention_mask, decoder_input_ids, decoder_attention_mask
 
     def get_config(self):
+        encoder_config = MoonshineStreamingEncoderConfig(
+            hidden_size=self.hidden_size,
+            intermediate_size=self.hidden_size * self.ffn_mult,
+            num_hidden_layers=self.num_hidden_layers,
+            num_attention_heads=self.num_attention_heads,
+            num_key_value_heads=self.num_attention_heads,
+            head_dim=self.head_dim,
+        )
         return MoonshineStreamingConfig(
+            encoder_config=encoder_config,
             vocab_size=self.vocab_size,
             hidden_size=self.hidden_size,
             head_dim=self.head_dim,
-            encoder_num_hidden_layers=self.num_hidden_layers,
             decoder_num_hidden_layers=self.num_hidden_layers,
-            encoder_num_attention_heads=self.num_attention_heads,
             decoder_num_attention_heads=self.num_attention_heads,
-            ffn_mult=self.ffn_mult,
             use_swiglu_encoder=self.use_swiglu_encoder,
             use_swiglu_decoder=self.use_swiglu_decoder,
             decoder_rotary_dim=self.decoder_rotary_dim,
