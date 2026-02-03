@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright 2026 the HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
 
 from ...configuration_utils import PreTrainedConfig
 from ...modeling_rope_utils import RopeParameters
@@ -25,19 +23,19 @@ class MoonshineStreamingEncoderConfig(PreTrainedConfig):
 
     def __init__(
         self,
-        hidden_size: Optional[int] = 320,
-        intermediate_size: Optional[int] = 1280,
-        hidden_act: Optional[str] = "gelu",
-        num_hidden_layers: Optional[int] = 6,
-        num_attention_heads: Optional[int] = 8,
-        num_key_value_heads: Optional[int] = 8,
-        max_position_embeddings: Optional[int] = 4096,
-        attention_dropout: Optional[float] = 0.0,
-        attention_bias: Optional[bool] = False,
+        hidden_size: int | None = 320,
+        intermediate_size: int | None = 1280,
+        hidden_act: str | None = "gelu",
+        num_hidden_layers: int | None = 6,
+        num_attention_heads: int | None = 8,
+        num_key_value_heads: int | None = 8,
+        max_position_embeddings: int | None = 4096,
+        attention_dropout: float | None = 0.0,
+        attention_bias: bool | None = False,
         sample_rate: int = 16000,
         frame_ms: float = 5.0,
         sliding_windows: list[tuple[int, int]] = [(16, 4), (16, 4), (16, 0), (16, 0), (16, 4), (16, 4)],
-        head_dim: Optional[int] = None,
+        head_dim: int | None = None,
         **kwargs,
     ):
         self.hidden_size = hidden_size
@@ -66,26 +64,26 @@ class MoonshineStreamingConfig(PreTrainedConfig):
         self,
         encoder_config: MoonshineStreamingEncoderConfig = None,
         vocab_size: int = 32768,
-        hidden_size: Optional[int] = 320,
-        intermediate_size: Optional[int] = 1280,
-        num_hidden_layers: Optional[int] = 6,
-        num_attention_heads: Optional[int] = 8,
-        hidden_act: Optional[str] = "silu",
+        hidden_size: int | None = 320,
+        intermediate_size: int | None = 1280,
+        num_hidden_layers: int | None = 6,
+        num_attention_heads: int | None = 8,
+        hidden_act: str | None = "silu",
         max_position_embeddings: int = 4096,
-        use_cache: Optional[bool] = True,
+        use_cache: bool | None = True,
         pad_token_id: int = 0,
         bos_token_id: int = 1,
         eos_token_id: int = 2,
-        rope_parameters: Optional[RopeParameters | dict[str, RopeParameters]] = {
+        rope_parameters: RopeParameters | dict[str, RopeParameters] | None = {
             "rope_type": "default",
             "rope_theta": 10000.0,
             "partial_rotary_factor": 0.8,
         },
         attention_bias: bool = False,
         attention_dropout: float = 0.0,
-        decoder_start_token_id: Optional[int] = None,
-        head_dim: Optional[int] = None,
-        pad_head_dim_to_multiple_of: Optional[int] = None,
+        decoder_start_token_id: int | None = None,
+        head_dim: int | None = None,
+        pad_head_dim_to_multiple_of: int | None = None,
         **kwargs,
     ):
         if isinstance(encoder_config, dict):

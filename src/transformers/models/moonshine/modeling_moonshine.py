@@ -20,7 +20,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -45,7 +45,7 @@ from ...modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
 from ...processing_utils import Unpack
 from ...utils import TransformersKwargs, auto_docstring, can_return_tuple
-from ...utils.generic import is_flash_attention_requested, maybe_autocast
+from ...utils.generic import maybe_autocast
 from .configuration_moonshine import MoonshineConfig
 
 
@@ -56,7 +56,7 @@ from .configuration_moonshine import MoonshineConfig
     """
 )
 class MoonshineEncoderModelOutput(BaseModelOutput):
-    attention_mask: Optional[torch.Tensor] = None
+    attention_mask: torch.Tensor | None = None
 
 
 class MoonshineEncoderMLP(nn.Module):

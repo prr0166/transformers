@@ -1,4 +1,3 @@
-# coding=utf-8
 # Copyright 2026 the HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,7 +14,6 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Optional, Union
 
 import torch
 import torch.nn as nn
@@ -68,7 +66,7 @@ class MoonshineStreamingProcessor(Wav2Vec2Processor): ...
     """
 )
 class MoonshineStreamingEncoderModelOutput(BaseModelOutput):
-    attention_mask: Optional[torch.Tensor] = None
+    attention_mask: torch.Tensor | None = None
 
 
 class MoonshineStreamingFrameCMVN(nn.Module):
@@ -105,7 +103,7 @@ class MoonshineStreamingCausalConv1d(nn.Conv1d):
         super().__init__(in_channels, out_channels, kernel_size, stride=stride, dilation=dilation, bias=bias)
         self.left_pad = (kernel_size - 1) * dilation
 
-    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, mask: torch.Tensor | None = None) -> torch.Tensor:
         x = nn.functional.pad(x, (self.left_pad, 0))
         x = super().forward(x)
 
@@ -165,7 +163,7 @@ class MoonshineStreamingEncoderAttention(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
         **kwargs: Unpack[TransformersKwargs],
     ) -> tuple[torch.Tensor, torch.Tensor]:
         input_shape = hidden_states.shape[:-1]
@@ -287,7 +285,7 @@ class MoonshineStreamingEncoder(MoonshineStreamingPreTrainedModel):
     def forward(
         self,
         input_values: torch.FloatTensor,
-        attention_mask: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
         **kwargs: Unpack[TransformersKwargs],
     ) -> BaseModelOutputWithPast:
         r"""
@@ -357,17 +355,17 @@ class MoonshineStreamingDecoder(MoonshineDecoder):
     @check_model_inputs
     def forward(
         self,
-        input_ids: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[Cache] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        use_cache: Optional[bool] = None,
-        cache_position: Optional[torch.LongTensor] = None,
-        encoder_hidden_states: Optional[torch.FloatTensor] = None,
-        encoder_attention_mask: Optional[torch.Tensor] = None,
+        input_ids: torch.LongTensor | None = None,
+        attention_mask: torch.Tensor | None = None,
+        position_ids: torch.LongTensor | None = None,
+        past_key_values: Cache | None = None,
+        inputs_embeds: torch.FloatTensor | None = None,
+        use_cache: bool | None = None,
+        cache_position: torch.LongTensor | None = None,
+        encoder_hidden_states: torch.FloatTensor | None = None,
+        encoder_attention_mask: torch.Tensor | None = None,
         **kwargs: Unpack[TransformersKwargs],
-    ) -> Union[tuple, BaseModelOutputWithPast]:
+    ) -> tuple | BaseModelOutputWithPast:
         r"""
         encoder_hidden_states (`torch.FloatTensor` of shape `(batch_size, encoder_sequence_length, hidden_size)`, *optional*):
             Sequence of hidden-states at the output of the last layer of the encoder. Used in the cross-attention

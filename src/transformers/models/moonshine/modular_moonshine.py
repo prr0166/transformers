@@ -14,7 +14,6 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Optional, Union
 
 import torch
 import torch.nn as nn
@@ -39,7 +38,6 @@ from ...modeling_rope_utils import RopeParameters
 from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
 from ...processing_utils import Unpack
 from ...utils import TransformersKwargs, auto_docstring, can_return_tuple, logging
-from ...utils.generic import is_flash_attention_requested
 from ..glm.modeling_glm import GlmAttention, GlmRotaryEmbedding, apply_rotary_pos_emb
 from ..llama.modeling_llama import LlamaDecoderLayer, LlamaModel, eager_attention_forward
 from ..whisper.modeling_whisper import WhisperModel, shift_tokens_right
@@ -222,7 +220,7 @@ class MoonshineConfig(PreTrainedConfig):
     """
 )
 class MoonshineEncoderModelOutput(BaseModelOutput):
-    attention_mask: Optional[torch.Tensor] = None
+    attention_mask: torch.Tensor | None = None
 
 
 class MoonshineEncoderMLP(nn.Module):

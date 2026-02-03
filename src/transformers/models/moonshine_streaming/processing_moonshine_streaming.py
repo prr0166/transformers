@@ -4,7 +4,6 @@
 #             the file from the modular. If any change should be done, please apply the change to the
 #                          modular_moonshine_streaming.py file directly. One of our CI enforces this.
 #                🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨
-# coding=utf-8
 # Copyright 2026 the HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,11 +18,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import warnings
-from typing import Optional, Union
-
 from ...processing_utils import ProcessingKwargs, ProcessorMixin, Unpack
 from ...tokenization_utils_base import AudioInput, PreTokenizedInput, TextInput
+from ...utils import auto_docstring
 
 
 class MoonshineStreamingProcessorKwargs(ProcessingKwargs, total=False):
@@ -36,48 +33,22 @@ class MoonshineStreamingProcessorKwargs(ProcessingKwargs, total=False):
     }
 
 
+@auto_docstring
 class MoonshineStreamingProcessor(ProcessorMixin):
-    r"""
-    Constructs a MoonshineStreaming processor which wraps a MoonshineStreaming feature extractor and a MoonshineStreaming CTC tokenizer into a single
-    processor.
-
-    [`MoonshineStreamingProcessor`] offers all the functionalities of [`MoonshineStreamingFeatureExtractor`] and [`PreTrainedTokenizer`].
-    See the docstring of [`~MoonshineStreamingProcessor.__call__`] and [`~MoonshineStreamingProcessor.decode`] for more information.
-
-    Args:
-        feature_extractor (`MoonshineStreamingFeatureExtractor`):
-            An instance of [`MoonshineStreamingFeatureExtractor`]. The feature extractor is a required input.
-        tokenizer ([`PreTrainedTokenizer`]):
-            An instance of [`PreTrainedTokenizer`]. The tokenizer is a required input.
-    """
-
     def __init__(self, feature_extractor, tokenizer):
         super().__init__(feature_extractor, tokenizer)
 
+    @auto_docstring
     def __call__(
         self,
-        audio: Optional[AudioInput] = None,
-        text: Optional[Union[str, list[str], TextInput, PreTokenizedInput]] = None,
+        audio: AudioInput | None = None,
+        text: str | list[str] | TextInput | PreTokenizedInput | None = None,
         **kwargs: Unpack[MoonshineStreamingProcessorKwargs],
     ):
-        """
-        This method forwards all arguments to [`MoonshineStreamingFeatureExtractor.__call__`] and/or
-        [`PreTrainedTokenizer.__call__`] depending on the input modality and returns their outputs. If both modalities are passed, [`MoonshineStreamingFeatureExtractor.__call__`] and [`PreTrainedTokenizer.__call__`] are called.
-
-        Args:
-            audio (`np.ndarray`, `torch.Tensor`, `List[np.ndarray]`, `List[torch.Tensor]`, *optional*):
-                An audio input is passed to [`MoonshineStreamingFeatureExtractor.__call__`].
-            text (`str`, `List[str]`, *optional*):
-                A text input is passed to [`PreTrainedTokenizer.__call__`].
-
-
+        r"""
         Returns:
             This method returns the results of each `call` method. If both are used, the output is a dictionary containing the results of both.
         """
-        if "raw_speech" in kwargs:
-            warnings.warn("Using `raw_speech` as a keyword argument is deprecated. Use `audio` instead.")
-            audio = kwargs.pop("raw_speech")
-
         if audio is None and text is None:
             raise ValueError("You need to specify either an `audio` or `text` input to process.")
 
