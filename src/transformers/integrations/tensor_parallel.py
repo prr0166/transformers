@@ -724,6 +724,24 @@ class ColwiseParallel(TensorParallelLayer):
         shape[dim] = end - start
         return tuple(shape)
 
+class Gather(TensorParallelLayer):
+    """
+    Column-wise parallel: weight is sharded on dim -2 (output features).
+    Forward: input replicated -> output sharded on last dim.
+    If gather_output=True, output is all-gathered to produce full tensor.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def _prepare_input_fn(self, mod, inputs, device_mesh):
+        input_tensor = inputs[0] if inputs else inputs
+        return all_reduce_backward(input_tensor, device_mesh)
+
+    def _prepare_output_fn(self, mod, outputs, device_mesh):
+        return all_gather(outputs, device_mesh)
+
+
 
 class RowwiseParallel(TensorParallelLayer):
     """
@@ -1078,6 +1096,7 @@ class ParallelInterface(GeneralInterface):
             "grouped_gemm": GroupedGemmParallel(),
             "ep_router": RouterParallel(),
             "moe_tp_experts": MoeTensorParalellExperts(),
+            "gather": Gather(),
         }
         if is_torch_available() and _torch_distributed_available
         else {}

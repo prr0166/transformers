@@ -252,17 +252,22 @@ def apply_interleave_rotary_emb(
     return y
 
 def index_no_scaling(q: torch.Tensor, _scale, k: torch.Tensor) -> torch.Tensor:
-    # q is b, s, n_heads, head_dim
-    # k is b, s, head_dim
-    # _scale is b, s, head_dim 
-    # the output should be B, S, X :)
-    # then we TOP_K on the output but the given index should be in S.
-    # Non quantized version goes extremely wrong :)
-    logits = q @ k[..., None]
-    logits = torch.relu(logits)
-    logits = (logits * _scale.unsqueeze(-2)).sum(-1)           # [B, H, M]
-    return logits # shape is just B, Seqlen. It just gives a score and then we are only using the ones that fall in the top 2048 if ctx len > 2048. If not they are all always used, should be skipped :) :)
+    B, S, H, D = q.shape  # q: (B,S,H,D), k: (B,S,D), w: (B,S,H)
 
+    # Flatten queries over (t, head) so we can use a single matmul
+    q_flat = q.reshape(B, S * H, D)                          # (B, S*H, D)
+
+    # Dot: (B, s_key, t_head) = (B,S,D) @ (B,D,S*H)
+    dot = torch.matmul(k, q_flat.transpose(-2, -1))          # (B, S, S*H)
+
+    # Reshape into (B, s_key, t_query, head) then permute to (B, t, s, h)
+    dot = dot.view(B, S, S, H).transpose(1, 2)               # (B, S, S, H) as (t, s, h)
+    contrib = torch.relu(dot)                                # (B, S, S, H)\
+    # Apply head weights w_{t,h}: broadcast over s
+    contrib = contrib * _scale.unsqueeze(2)                       # w: (B,S,H) -> (B,S,1,H)
+    mask = torch.tril(torch.ones(S, S, device=q.device, dtype=torch.bool), diagonal=-1)  # s < t
+    contrib = contrib.masked_fill(~mask[None, :, :, None], 0.0)
+    return contrib.sum(dim=-1)
 
 
 # TODO: replace with a kernel here.
@@ -321,7 +326,7 @@ class DeepseekV32Indexer(nn.Module):
                 k = past_key_values.indexer_keys
 
         # weights_proj is kept in fp32
-        weights = self.weights_proj(hidden_states.float()) * self.num_heads ** -0.5
+        weights = self.weights_proj(hidden_states) * self.num_heads ** -0.5
         weights = weights * self.softmax_scale
 
         index_score = index_no_scaling(q, weights, k)
@@ -428,10 +433,10 @@ class DeepseekV32Attention(nn.Module):
             index_mask = torch.full((B, S, S), float("-inf"), device=hidden_states.device).scatter_(-1, topk_indices, 0)
             # TODO for now we use `eager` attn implementation only because otherwise the mask is not materialized properly (expectedly so)
             # here we should probably use the masking utils?
-            index_mask += attention_mask
+            index_mask += attention_mask[:, 0, :, :]
             scores += index_mask.unsqueeze(2)
 
-            scores = scores.softmax(dim=-1)
+            scores = scores.softmax(dim=-1).to(v.dtype)
             x = torch.einsum("bsht,bthd->bshd", scores, v)
 
         else:

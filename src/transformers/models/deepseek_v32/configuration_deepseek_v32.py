@@ -125,7 +125,7 @@ class DeepseekV32Config(PreTrainedConfig, RotaryEmbeddingConfigMixin):
         # "layers.*.self_attn.q_b_proj": "local_colwise",
         # "layers.*.self_attn.kv_b_proj": "local_colwise",
         # "layers.*.self_attn.o_proj": "local_rowwise",
-        "layers.*.self_attn": "gather",
+        # "layers.*.self_attn": "gather",
         "layers.*.mlp.experts.gate_up_proj": "grouped_gemm",
         "layers.*.mlp.experts.down_proj": "grouped_gemm",
         "layers.*.mlp.experts": "gather",
