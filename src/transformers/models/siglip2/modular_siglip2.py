@@ -40,7 +40,6 @@ from ...processing_utils import Unpack
 from ...utils import (
     TransformersKwargs,
     auto_docstring,
-    can_return_tuple,
     torch_compilable_check,
 )
 from ...utils.generic import check_model_inputs, is_flash_attention_requested
