@@ -142,9 +142,10 @@ class MoonshineConfig(PreTrainedConfig):
     model_type = "moonshine"
     keys_to_ignore_at_inference = ["past_key_values"]
     attribute_map = {
-        "num_key_value_heads": "encoder_num_key_value_heads",
-        "num_attention_heads": "encoder_num_attention_heads",
-        "num_hidden_layers": "encoder_num_hidden_layers",
+        "num_key_value_heads": "decoder_num_key_value_heads",
+        "num_attention_heads": "decoder_num_attention_heads",
+        "num_hidden_layers": "decoder_num_hidden_layers",
+        "hidden_act": "decoder_hidden_act",
     }
 
     def __init__(
@@ -405,7 +406,7 @@ class MoonshineDecoderLayer(GradientCheckpointingLayer):
             num_key_value_heads=config.num_key_value_heads,
         )
 
-        self.mlp = MoonshineDecoderMLP(config, config.decoder_hidden_act)
+        self.mlp = MoonshineDecoderMLP(config, config.hidden_act)
         self.input_layernorm = nn.LayerNorm(config.hidden_size, bias=False)
         self.post_attention_layernorm = nn.LayerNorm(config.hidden_size, bias=False)
         self.final_layernorm = nn.LayerNorm(config.hidden_size, bias=False)
