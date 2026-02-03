@@ -227,6 +227,7 @@ if is_accelerate_available():
     if is_deepspeed_available():
         from accelerate.utils import DeepSpeedSchedulerWrapper
 
+
 def _is_peft_model(model):
     if is_peft_available():
         classes_to_check = (PeftModel, PeftMixedModel)
@@ -2340,7 +2341,7 @@ class Trainer:
                 model, self.optimizer = self.accelerator.prepare(self.model, self.optimizer)
         else:
             self.optimizer = self.accelerator.prepare(self.optimizer)
-        
+
         # Create scheduler now that the optimizer won't change anymore
         self.create_scheduler(num_training_steps=max_steps)
 
