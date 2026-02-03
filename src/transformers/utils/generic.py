@@ -924,7 +924,7 @@ def check_model_inputs(func=None, *, tie_last_hidden_states=True):
                 return_dict = getattr(self.config, "return_dict", True)
 
             # Maybe temporarily overwrite config value to create the correct mask - kwarg takes precedence
-            is_causal = kwargs.pop("is_causal", True)
+            is_causal = kwargs.get("is_causal", True)
             if not is_causal:
                 is_causal_in_config = hasattr(self.config, "is_causal")
                 if is_causal_in_config:
