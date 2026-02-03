@@ -320,10 +320,13 @@ class DeepseekV32Indexer(nn.Module):
 
         if past_key_values is not None:
             if not hasattr(past_key_values, "indexer_keys"):
-                past_key_values.indexer_keys = k
+                past_key_values.indexer_keys = [k]
             else:
-                past_key_values.indexer_keys = torch.cat([past_key_values.indexer_keys, k], dim=1)
-                k = past_key_values.indexer_keys
+                if len(past_key_values.indexer_keys) <= self.layer_idx:
+                    past_key_values.indexer_keys.append(k)
+                else:
+                    past_key_values.indexer_keys[self.layer_idx] = torch.cat([past_key_values.indexer_keys[self.layer_idx], k], dim=1)
+                    k = past_key_values.indexer_keys[self.layer_idx]
 
         # weights_proj is kept in fp32
         weights = self.weights_proj(hidden_states) * self.num_heads ** -0.5
@@ -473,6 +476,7 @@ class DeepseekV32Moe(nn.Module):
         self.num_group = config.n_group
         self.top_k = config.num_experts_per_tok
         self.topk_group = config.topk_group
+        self.num_experts = config.n_routed_experts
 
     def route_tokens_to_experts(self, router_logits):
         batch_size, seq_len, hidden_dim = router_logits.shape
