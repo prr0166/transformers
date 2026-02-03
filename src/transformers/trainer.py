@@ -215,6 +215,7 @@ if is_accelerate_available():
         DataLoaderConfiguration,
         DistributedDataParallelKwargs,
         DistributedType,
+        DummyScheduler,
         load_fsdp_model,
         load_fsdp_optimizer,
         release_memory,
@@ -225,7 +226,6 @@ if is_accelerate_available():
 
     if is_deepspeed_available():
         from accelerate.utils import DeepSpeedSchedulerWrapper
-
 
 def _is_peft_model(model):
     if is_peft_available():
@@ -1181,12 +1181,7 @@ class Trainer:
         `create_scheduler`) in a subclass.
         """
         self.create_optimizer()
-        if is_sagemaker_mp_enabled() and smp.state.cfg.fp16:
-            # If fp16 is enabled, we unwrap the optimizer
-            optimizer = self.optimizer.optimizer
-        else:
-            optimizer = self.optimizer
-        self.create_scheduler(num_training_steps=num_training_steps, optimizer=optimizer)
+        self.create_scheduler(num_training_steps=num_training_steps)
 
     def get_decay_parameter_names(self, model) -> list[str]:
         """
@@ -1761,9 +1756,14 @@ class Trainer:
             num_training_steps (int): The number of training steps to do.
         """
         if self.lr_scheduler is None:
+            if is_sagemaker_mp_enabled() and smp.state.cfg.fp16:
+                # If fp16 is enabled, we unwrap the optimizer
+                optimizer = self.optimizer.optimizer
+            else:
+                optimizer = self.optimizer
             self.lr_scheduler = get_scheduler(
                 self.args.lr_scheduler_type,
-                optimizer=self.optimizer if optimizer is None else optimizer,
+                optimizer=optimizer,
                 num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
                 num_training_steps=num_training_steps,
                 scheduler_specific_kwargs=self.args.lr_scheduler_kwargs,
@@ -2292,7 +2292,7 @@ class Trainer:
             self.optimizer, self.lr_scheduler = deepspeed_init(self, num_training_steps=max_steps)
 
         if not delay_optimizer_creation:
-            self.create_optimizer_and_scheduler(num_training_steps=max_steps)
+            self.create_optimizer()
 
         self.state = TrainerState(
             stateful_callbacks=[
@@ -2327,20 +2327,22 @@ class Trainer:
                 self._fsdp_qlora_plugin_updates()
                 if self.accelerator.mixed_precision != "fp8":
                     self.model = self.accelerator.prepare(self.model)
-            self.create_optimizer_and_scheduler(num_training_steps=max_steps)
+            self.create_optimizer()
 
         # prepare using `accelerator` prepare
         if use_accelerator_prepare:
             self.model.train()
-            if hasattr(self.lr_scheduler, "step"):
-                model, self.optimizer = self.accelerator.prepare(self.model, self.optimizer)
-            else:
-                # to handle cases wherein we pass "DummyScheduler" such as when it is specified in DeepSpeed config.
+            if self.is_deepspeed_enabled and isinstance(self.lr_scheduler, DummyScheduler):
                 model, self.optimizer, self.lr_scheduler = self.accelerator.prepare(
                     self.model, self.optimizer, self.lr_scheduler
                 )
+            else:
+                model, self.optimizer = self.accelerator.prepare(self.model, self.optimizer)
         else:
             self.optimizer = self.accelerator.prepare(self.optimizer)
+        
+        # Create scheduler now that the optimizer won't change anymore
+        self.create_scheduler(num_training_steps=max_steps)
 
         # since DataLoader was Accelerate prepared w/o a model arg in the same call, we now have to complete the DL wrapping for ALST/UlyssesSP, after model has been prepared
         pc = getattr(self.accelerator, "parallelism_config", None)
