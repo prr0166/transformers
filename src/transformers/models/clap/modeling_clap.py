@@ -29,7 +29,6 @@ from ...modeling_layers import GradientCheckpointingLayer
 from ...modeling_outputs import (
     BaseModelOutput,
     BaseModelOutputWithPooling,
-    BaseModelOutputWithPoolingAndCrossAttentions,
 )
 from ...modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
 from ...processing_utils import Unpack
@@ -1694,6 +1693,10 @@ class ClapModel(ClapPreTrainedModel):
 class ClapTextModelWithProjection(ClapPreTrainedModel):
     config: ClapTextConfig
     input_modalities = ("text",)
+    _can_record_outputs = {
+        "hidden_states": ClapTextLayer,
+        "attentions": ClapTextSelfAttention,
+    }
 
     def __init__(self, config: ClapTextConfig):
         super().__init__(config)
@@ -1708,18 +1711,15 @@ class ClapTextModelWithProjection(ClapPreTrainedModel):
     def set_input_embeddings(self, value):
         self.text_model.embeddings.word_embeddings = value
 
-    @can_return_tuple
+    @check_model_inputs(tie_last_hidden_states=False)
     @auto_docstring
     def forward(
         self,
         input_ids: torch.Tensor | None = None,
         attention_mask: torch.Tensor | None = None,
         position_ids: torch.Tensor | None = None,
-        output_attentions: bool | None = None,
-        output_hidden_states: bool | None = None,
-        return_dict: bool | None = None,
-        **kwargs,
-    ) -> tuple | ClapTextModelOutput:
+        **kwargs: Unpack[TransformersKwargs],
+    ) -> ClapTextModelOutput:
         r"""
         Examples:
 
@@ -1734,26 +1734,18 @@ class ClapTextModelWithProjection(ClapPreTrainedModel):
         >>> outputs = model(**inputs)
         >>> text_embeds = outputs.text_embeds
         ```"""
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        text_outputs = self.text_model(
+        text_outputs: BaseModelOutputWithPooling = self.text_model(
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=True,
+            **kwargs,
         )
-
-        pooled_output = text_outputs[1] if not return_dict else text_outputs.pooler_output
-
+        pooled_output = text_outputs.pooler_output
         text_embeds = self.text_projection(pooled_output)
 
         return ClapTextModelOutput(
             text_embeds=text_embeds,
             last_hidden_state=text_outputs.last_hidden_state,
-            hidden_states=text_outputs.hidden_states,
-            attentions=text_outputs.attentions,
         )
 
 
@@ -1806,10 +1798,6 @@ class ClapAudioModelWithProjection(ClapPreTrainedModel):
         >>> audio_embeds = outputs.audio_embeds
         ```"""
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
 
         audio_outputs = self.audio_model(
             input_features=input_features,
