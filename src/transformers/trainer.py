@@ -1757,11 +1757,12 @@ class Trainer:
             num_training_steps (int): The number of training steps to do.
         """
         if self.lr_scheduler is None:
-            if is_sagemaker_mp_enabled() and smp.state.cfg.fp16:
-                # If fp16 is enabled, we unwrap the optimizer
-                optimizer = self.optimizer.optimizer
-            else:
-                optimizer = self.optimizer
+            if optimizer is None:
+                if is_sagemaker_mp_enabled() and smp.state.cfg.fp16:
+                    # If fp16 is enabled, we unwrap the optimizer
+                    optimizer = self.optimizer.optimizer
+                else:
+                    optimizer = self.optimizer
             self.lr_scheduler = get_scheduler(
                 self.args.lr_scheduler_type,
                 optimizer=optimizer,
