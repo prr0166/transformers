@@ -107,9 +107,9 @@ class PreTrainedConfig(PushToHubMixin, RotaryEmbeddingConfigMixin):
             Store the string that was passed to [`PreTrainedModel.from_pretrained`] as `pretrained_model_name_or_path`
             if the configuration was created with such a method.
         output_hidden_states (`bool`, *optional*, defaults to `False`):
-            Whether or not the model should return all hidden-states.
+            Whether or not the model should return all hidden-states. This flag is propagated to all sub-configs.
         output_attentions (`bool`, *optional*, defaults to `False`):
-            Whether or not the model should returns all attentions.
+            Whether or not the model should returns all attentions. This flag is propagated to all sub-configs.
         return_dict (`bool`, *optional*, defaults to `True`):
             Whether or not the model should return a [`~transformers.utils.ModelOutput`] instead of a plain tuple.
         is_encoder_decoder (`bool`, *optional*, defaults to `False`):
