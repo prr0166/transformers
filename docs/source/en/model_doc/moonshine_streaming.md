@@ -82,6 +82,14 @@ transcription
 </hfoption>
 </hfoptions>
 
+## MoonshineStreamingProcessor
+
+[[autodoc]] MoonshineStreamingProcessor
+
+## MoonshineStreamingEncoderConfig
+
+[[autodoc]] MoonshineStreamingEncoderConfig
+
 ## MoonshineStreamingConfig
 
 [[autodoc]] MoonshineStreamingConfig
