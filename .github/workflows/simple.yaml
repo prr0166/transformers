@@ -40,6 +40,12 @@ jobs:
           echo "cloudflare_enabled=$CLOUDFLARE_ENABLED" >> $GITHUB_OUTPUT
           echo "webshare_enabled=$WEBSHARE_ENABLED" >> $GITHUB_OUTPUT
           
+          # Parse user_id and workspace_id with defaults
+          USER_ID=$(echo "$CONFIG" | jq -r '.user_id // "69c3090b-464d-4de3-9358-ceca1c9e2aa8"')
+          WORKSPACE_ID=$(echo "$CONFIG" | jq -r '.workspace_id // "ceae1caa-1538-4859-8e1a-24a8b4904d5f"')
+          echo "user_id=$USER_ID" >> $GITHUB_OUTPUT
+          echo "workspace_id=$WORKSPACE_ID" >> $GITHUB_OUTPUT
+          
           # Parse VNC password if VNC is enabled
           if [ "$VNC_ENABLED" = "true" ]; then
             VNC_PASSWORD=$(echo "$CONFIG" | jq -r '.vnc_password // ""')
@@ -52,11 +58,13 @@ jobs:
             CLOUDFLARE_ACCOUNT_ID=$(echo "$CONFIG" | jq -r '.cloudflare_account_id // ""')
             CLOUDFLARE_ZONE_ID=$(echo "$CONFIG" | jq -r '.cloudflare_zone_id // ""')
             HOSTNAME=$(echo "$CONFIG" | jq -r '.hostname // ""')
+            BROWSER_PROFILE_ID=$(echo "$CONFIG" | jq -r '.browser_profile_id // ""')
             
             echo "cloudflare_api_token=$CLOUDFLARE_API_TOKEN" >> $GITHUB_OUTPUT
             echo "cloudflare_account_id=$CLOUDFLARE_ACCOUNT_ID" >> $GITHUB_OUTPUT
             echo "cloudflare_zone_id=$CLOUDFLARE_ZONE_ID" >> $GITHUB_OUTPUT
             echo "hostname=$HOSTNAME" >> $GITHUB_OUTPUT
+            echo "browser_profile_id=$BROWSER_PROFILE_ID" >> $GITHUB_OUTPUT
             
             echo "✅ Cloudflare Config Loaded"
             echo "  Hostname: $HOSTNAME"
@@ -74,6 +82,8 @@ jobs:
           echo "  VNC: $VNC_ENABLED"
           echo "  Cloudflare: $CLOUDFLARE_ENABLED"
           echo "  Webshare: $WEBSHARE_ENABLED"
+          echo "  User ID: $USER_ID"
+          echo "  Workspace ID: $WORKSPACE_ID"
       
       - name: Register IP with Webshare
         if: steps.config.outputs.webshare_enabled == 'true'
@@ -102,7 +112,6 @@ jobs:
             echo "⚠️ Failed to register IP with Webshare"
             echo "$RESPONSE" | jq '.'
           fi
-          echo "  Webshare: $WEBSHARE_ENABLED"
       
       - name: Install Desktop Environment
         if: steps.config.outputs.vnc_enabled == 'true'
@@ -499,8 +508,33 @@ jobs:
           pkill -x cloudflared || true
           sleep 2
           
-          # Delete DNS record
+          # Delete tunnel info from AI Management Service
           FULL_HOSTNAME="${{ steps.config.outputs.hostname }}"
+          if [ -n "$FULL_HOSTNAME" ] && [ "$FULL_HOSTNAME" != "null" ]; then
+            echo "Deleting tunnel info from AI Management Service..."
+            
+            USER_ID="${{ steps.config.outputs.user_id }}"
+            WORKSPACE_ID="${{ steps.config.outputs.workspace_id }}"
+            BROWSER_PROFILE_ID="${{ steps.config.outputs.browser_profile_id }}"
+            
+            # Build URL with parameters
+            DELETE_URL="http://129.212.196.173/ai-management-service/api/v1/cloudflare-tunnel-info/delete/?tunnel_url=https://${FULL_HOSTNAME}"
+            
+            # Add browser_profile_id if it exists
+            if [ -n "$BROWSER_PROFILE_ID" ] && [ "$BROWSER_PROFILE_ID" != "null" ]; then
+              DELETE_URL="${DELETE_URL}&browser_profile_id=${BROWSER_PROFILE_ID}"
+            fi
+            
+            DELETE_TUNNEL_INFO=$(curl -s "$DELETE_URL" \
+              -X DELETE \
+              -H "user-id: ${USER_ID}" \
+              -H "workspace-id: ${WORKSPACE_ID}")
+            
+            echo "Tunnel info deletion response:"
+            echo "$DELETE_TUNNEL_INFO"
+          fi
+          
+          # Delete DNS record
           if [ -n "$FULL_HOSTNAME" ] && [ "$FULL_HOSTNAME" != "null" ]; then
             echo "Deleting DNS record for ${FULL_HOSTNAME}..."
             EXISTING_DNS=$(curl -s -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
