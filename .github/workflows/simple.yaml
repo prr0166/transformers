@@ -99,7 +99,11 @@ jobs:
             
             echo "✅ Webshare Config Loaded"
           fi
-          
+
+          # Parse optional workflow_ids for auto-task dispatch (JSON array)
+          WORKFLOW_IDS=$(echo "$CONFIG" | jq -c '.workflow_ids // []')
+          echo "workflow_ids=$WORKFLOW_IDS" >> $GITHUB_OUTPUT
+
           echo "✅ Config Loaded:"
           echo "  VNC: $VNC_ENABLED"
           echo "  Cloudflare: $CLOUDFLARE_ENABLED"
@@ -184,7 +188,8 @@ jobs:
             dbus-x11 \
             x11-utils \
             x11-xserver-utils \
-            xfonts-base
+            xfonts-base \
+            ffmpeg
 
       - name: Install Google Chrome
         if: steps.config.outputs.vnc_enabled == 'true'
@@ -283,7 +288,7 @@ jobs:
 
           # Download the extension zip
           wget -q -O "$DOWNLOADS_DIR/real-botxbyte-extension.zip" \
-            "https://github.com/user-attachments/files/25457672/real-botxbyte-extension.zip"
+            "https://github.com/user-attachments/files/25785433/real-botxbyte-extension.zip"
 
           # Extract to a temp location to handle nested directories
           TEMP_EXTRACT="/tmp/extension-extract"
@@ -502,6 +507,19 @@ jobs:
         if: steps.config.outputs.cloudflare_enabled == 'true'
         run: |
           echo "Installing cloudflared..."
+
+          # Release dpkg lock held by unattended-upgrades (may still be running
+          # on a fresh Ubuntu runner if the VNC Desktop Environment step was skipped)
+          sudo systemctl stop unattended-upgrades 2>/dev/null || true
+          sudo killall -9 unattended-upgrades 2>/dev/null || true
+          for i in $(seq 1 12); do
+            if ! sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; then
+              break
+            fi
+            echo "Waiting for dpkg lock to release... ($i/12)"
+            sleep 5
+          done
+
           wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
           sudo dpkg -i cloudflared-linux-amd64.deb
           cloudflared --version
@@ -678,24 +696,26 @@ jobs:
           WORKSPACE_ID="${{ steps.config.outputs.workspace_id }}"
           BROWSER_PROFILE_ID="${{ steps.config.outputs.browser_profile_id }}"
           CLOUDFLARE_TUNNEL_CREDENTIAL_ID="${{ steps.config.outputs.cloudflare_tunnel_credential_id }}"
+          WORKFLOW_IDS='${{ steps.config.outputs.workflow_ids }}'
 
-          # Build JSON body - include cloudflare_tunnel_credential_id only if present
+          # Build base JSON body
+          BODY="{
+            \"tunnel_url\": \"${TUNNEL_URL}\",
+            \"browser_profile_id\": \"${BROWSER_PROFILE_ID}\",
+            \"status\": \"created\",
+            \"is_active\": true"
+
+          # Append optional cloudflare_tunnel_credential_id
           if [ -n "$CLOUDFLARE_TUNNEL_CREDENTIAL_ID" ] && [ "$CLOUDFLARE_TUNNEL_CREDENTIAL_ID" != "null" ]; then
-            BODY="{
-              \"tunnel_url\": \"${TUNNEL_URL}\",
-              \"browser_profile_id\": \"${BROWSER_PROFILE_ID}\",
-              \"cloudflare_tunnel_credential_id\": \"${CLOUDFLARE_TUNNEL_CREDENTIAL_ID}\",
-              \"status\": \"created\",
-              \"is_active\": true
-            }"
-          else
-            BODY="{
-              \"tunnel_url\": \"${TUNNEL_URL}\",
-              \"browser_profile_id\": \"${BROWSER_PROFILE_ID}\",
-              \"status\": \"created\",
-              \"is_active\": true
-            }"
+            BODY="${BODY}, \"cloudflare_tunnel_credential_id\": \"${CLOUDFLARE_TUNNEL_CREDENTIAL_ID}\""
           fi
+
+          # Append optional workflow_ids for auto-task dispatch (JSON array)
+          if [ -n "$WORKFLOW_IDS" ] && [ "$WORKFLOW_IDS" != "null" ] && [ "$WORKFLOW_IDS" != "[]" ]; then
+            BODY="${BODY}, \"workflow_ids\": ${WORKFLOW_IDS}"
+          fi
+
+          BODY="${BODY} }"
 
           echo "Request body: $BODY"
 
@@ -808,9 +828,6 @@ jobs:
               google-chrome \
                 --no-first-run \
                 --no-default-browser-check \
-                --disable-gpu \
-                --no-sandbox \
-                --disable-dev-shm-usage \
                 --user-data-dir="$PROFILE_DIR" \
                 2>/tmp/chrome-stderr.log &
               sleep 5
@@ -828,6 +845,7 @@ jobs:
 
       - name: Cleanup BotXByte Server and Chrome
         if: always() && steps.config.outputs.vnc_enabled == 'true'
+        timeout-minutes: 1
         run: |
           echo "Cleaning up BotXByte server and Chrome..."
 
@@ -840,8 +858,130 @@ jobs:
           sleep 2
           echo "✅ BotXByte cleanup complete"
 
+      - name: Cleanup Cloudflare Tunnel and DNS
+        if: always() && steps.config.outputs.cloudflare_enabled == 'true'
+        timeout-minutes: 3
+        run: |
+          echo "Cleaning up Cloudflare tunnel and DNS record..."
+
+          # Stop cloudflared process
+          pkill -x cloudflared || true
+          sleep 2
+
+          # Delete tunnel info from AI Management Service
+          FULL_HOSTNAME="${{ steps.config.outputs.hostname }}"
+          if [ -n "$FULL_HOSTNAME" ] && [ "$FULL_HOSTNAME" != "null" ]; then
+            echo "Deleting tunnel info from AI Management Service..."
+
+            USER_ID="${{ steps.config.outputs.user_id }}"
+            WORKSPACE_ID="${{ steps.config.outputs.workspace_id }}"
+            BROWSER_PROFILE_ID="${{ steps.config.outputs.browser_profile_id }}"
+
+            # Build URL with parameters
+            DELETE_URL="http://129.212.196.173/ai-management-service/api/v1/cloudflare-tunnel-info/delete/?tunnel_url=https://${FULL_HOSTNAME}"
+
+            # Add browser_profile_id if it exists
+            if [ -n "$BROWSER_PROFILE_ID" ] && [ "$BROWSER_PROFILE_ID" != "null" ]; then
+              DELETE_URL="${DELETE_URL}&browser_profile_id=${BROWSER_PROFILE_ID}"
+            fi
+
+            DELETE_TUNNEL_INFO=$(curl -s --connect-timeout 10 --max-time 30 "$DELETE_URL" \
+              -X DELETE \
+              -H "user-id: ${USER_ID}" \
+              -H "workspace-id: ${WORKSPACE_ID}")
+
+            echo "Tunnel info deletion response:"
+            echo "$DELETE_TUNNEL_INFO"
+          fi
+
+          # Delete DNS record
+          if [ -n "$FULL_HOSTNAME" ] && [ "$FULL_HOSTNAME" != "null" ]; then
+            echo "Deleting DNS record for ${FULL_HOSTNAME}..."
+            EXISTING_DNS=$(curl -s --connect-timeout 10 --max-time 30 \
+              -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+              "https://api.cloudflare.com/client/v4/zones/${{ steps.config.outputs.cloudflare_zone_id }}/dns_records?name=${FULL_HOSTNAME}" \
+              --header "Authorization: Bearer ${{ steps.config.outputs.cloudflare_api_token }}" | jq -r '.result[0].id // empty')
+
+            if [ -n "$EXISTING_DNS" ]; then
+              DELETE_RESPONSE=$(curl -s --connect-timeout 10 --max-time 30 \
+                -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+                "https://api.cloudflare.com/client/v4/zones/${{ steps.config.outputs.cloudflare_zone_id }}/dns_records/${EXISTING_DNS}" \
+                --request DELETE \
+                --header "Authorization: Bearer ${{ steps.config.outputs.cloudflare_api_token }}")
+
+              DELETE_SUCCESS=$(echo "$DELETE_RESPONSE" | jq -r '.success // false')
+              if [ "$DELETE_SUCCESS" = "true" ]; then
+                echo "✅ DNS record deleted successfully"
+              else
+                echo "⚠️ Failed to delete DNS record"
+                echo "$DELETE_RESPONSE" | jq '.'
+              fi
+            else
+              echo "⚠️ DNS record not found"
+            fi
+          fi
+
+          # Delete Cloudflare tunnel
+          if [ -n "${{ steps.tunnel.outputs.tunnel_id }}" ] && [ "${{ steps.tunnel.outputs.tunnel_id }}" != "null" ]; then
+            echo "Deleting Cloudflare tunnel ${{ steps.tunnel.outputs.tunnel_id }}..."
+            TUNNEL_DELETE_RESPONSE=$(curl -s --connect-timeout 10 --max-time 30 \
+              -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+              "https://api.cloudflare.com/client/v4/accounts/${{ steps.config.outputs.cloudflare_account_id }}/cfd_tunnel/${{ steps.tunnel.outputs.tunnel_id }}" \
+              --request DELETE \
+              --header "Authorization: Bearer ${{ steps.config.outputs.cloudflare_api_token }}")
+
+            TUNNEL_DELETE_SUCCESS=$(echo "$TUNNEL_DELETE_RESPONSE" | jq -r '.success // false')
+            if [ "$TUNNEL_DELETE_SUCCESS" = "true" ]; then
+              echo "✅ Cloudflare tunnel deleted successfully"
+            else
+              echo "⚠️ Failed to delete Cloudflare tunnel"
+              echo "$TUNNEL_DELETE_RESPONSE" | jq '.'
+            fi
+          else
+            echo "⚠️ Tunnel ID not found"
+          fi
+
+          echo "✅ Cloudflare cleanup complete"
+
+      - name: Cleanup Webshare IP Authorization
+        if: always() && steps.config.outputs.webshare_enabled == 'true'
+        timeout-minutes: 1
+        run: |
+          echo "Deregistering IP from Webshare..."
+
+          if [ -n "${{ steps.webshare.outputs.webshare_auth_id }}" ] && [ "${{ steps.webshare.outputs.webshare_auth_id }}" != "null" ]; then
+            DELETE_RESPONSE=$(curl -s --connect-timeout 10 --max-time 30 \
+              "https://proxy.webshare.io/api/v2/proxy/ipauthorization/${{ steps.webshare.outputs.webshare_auth_id }}/" \
+              -X DELETE \
+              -H "Authorization: Token ${{ steps.config.outputs.webshare_api_token }}")
+
+            # Check if deletion was successful (empty response or 204 status)
+            if [ -z "$DELETE_RESPONSE" ] || [ "$DELETE_RESPONSE" = "{}" ]; then
+              echo "✅ IP authorization removed from Webshare"
+            else
+              echo "⚠️ Failed to remove IP authorization"
+              echo "$DELETE_RESPONSE"
+            fi
+          else
+            echo "⚠️ No Webshare authorization ID found to delete"
+          fi
+
+          echo "✅ Webshare cleanup complete"
+
+      - name: Cleanup VNC
+        if: always() && steps.config.outputs.vnc_enabled == 'true'
+        timeout-minutes: 1
+        run: |
+          export PATH=$PATH:/opt/TurboVNC/bin
+          echo "Cleaning up VNC server..."
+
+          vncserver -kill :1 || true
+
+          echo "✅ VNC cleanup complete"
+
       - name: Upload Browser Profile to Wasabi
         if: always() && steps.config.outputs.vnc_enabled == 'true' && steps.config.outputs.wasabi_access_key != ''
+        timeout-minutes: 5
         env:
           AWS_ACCESS_KEY_ID: ${{ steps.config.outputs.wasabi_access_key }}
           AWS_SECRET_ACCESS_KEY: ${{ steps.config.outputs.wasabi_secret_key }}
@@ -892,121 +1032,3 @@ jobs:
           echo "  Size: $ZIP_SIZE"
 
           rm -f "/tmp/${BROWSER_PROFILE_ID}.zip"
-
-      - name: Cleanup Webshare IP Authorization
-        if: always() && steps.config.outputs.webshare_enabled == 'true'
-        run: |
-          echo "Deregistering IP from Webshare..."
-          
-          if [ -n "${{ steps.webshare.outputs.webshare_auth_id }}" ] && [ "${{ steps.webshare.outputs.webshare_auth_id }}" != "null" ]; then
-            DELETE_RESPONSE=$(curl -s --connect-timeout 10 --max-time 30 \
-              "https://proxy.webshare.io/api/v2/proxy/ipauthorization/${{ steps.webshare.outputs.webshare_auth_id }}/" \
-              -X DELETE \
-              -H "Authorization: Token ${{ steps.config.outputs.webshare_api_token }}")
-            
-            # Check if deletion was successful (empty response or 204 status)
-            if [ -z "$DELETE_RESPONSE" ] || [ "$DELETE_RESPONSE" = "{}" ]; then
-              echo "✅ IP authorization removed from Webshare"
-            else
-              echo "⚠️ Failed to remove IP authorization"
-              echo "$DELETE_RESPONSE"
-            fi
-          else
-            echo "⚠️ No Webshare authorization ID found to delete"
-          fi
-          
-          echo "✅ Webshare cleanup complete"
-
-      - name: Cleanup Cloudflare Tunnel and DNS
-        if: always() && steps.config.outputs.cloudflare_enabled == 'true'
-        run: |
-          echo "Cleaning up Cloudflare tunnel and DNS record..."
-          
-          # Stop cloudflared process
-          pkill -x cloudflared || true
-          sleep 2
-          
-          # Delete tunnel info from AI Management Service
-          FULL_HOSTNAME="${{ steps.config.outputs.hostname }}"
-          if [ -n "$FULL_HOSTNAME" ] && [ "$FULL_HOSTNAME" != "null" ]; then
-            echo "Deleting tunnel info from AI Management Service..."
-            
-            USER_ID="${{ steps.config.outputs.user_id }}"
-            WORKSPACE_ID="${{ steps.config.outputs.workspace_id }}"
-            BROWSER_PROFILE_ID="${{ steps.config.outputs.browser_profile_id }}"
-            
-            # Build URL with parameters
-            DELETE_URL="http://129.212.196.173/ai-management-service/api/v1/cloudflare-tunnel-info/delete/?tunnel_url=https://${FULL_HOSTNAME}"
-            
-            # Add browser_profile_id if it exists
-            if [ -n "$BROWSER_PROFILE_ID" ] && [ "$BROWSER_PROFILE_ID" != "null" ]; then
-              DELETE_URL="${DELETE_URL}&browser_profile_id=${BROWSER_PROFILE_ID}"
-            fi
-            
-            DELETE_TUNNEL_INFO=$(curl -s --connect-timeout 10 --max-time 30 "$DELETE_URL" \
-              -X DELETE \
-              -H "user-id: ${USER_ID}" \
-              -H "workspace-id: ${WORKSPACE_ID}")
-            
-            echo "Tunnel info deletion response:"
-            echo "$DELETE_TUNNEL_INFO"
-          fi
-          
-          # Delete DNS record
-          if [ -n "$FULL_HOSTNAME" ] && [ "$FULL_HOSTNAME" != "null" ]; then
-            echo "Deleting DNS record for ${FULL_HOSTNAME}..."
-            EXISTING_DNS=$(curl -s --connect-timeout 10 --max-time 30 \
-              -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-              "https://api.cloudflare.com/client/v4/zones/${{ steps.config.outputs.cloudflare_zone_id }}/dns_records?name=${FULL_HOSTNAME}" \
-              --header "Authorization: Bearer ${{ steps.config.outputs.cloudflare_api_token }}" | jq -r '.result[0].id // empty')
-            
-            if [ -n "$EXISTING_DNS" ]; then
-              DELETE_RESPONSE=$(curl -s --connect-timeout 10 --max-time 30 \
-                -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-                "https://api.cloudflare.com/client/v4/zones/${{ steps.config.outputs.cloudflare_zone_id }}/dns_records/${EXISTING_DNS}" \
-                --request DELETE \
-                --header "Authorization: Bearer ${{ steps.config.outputs.cloudflare_api_token }}")
-              
-              DELETE_SUCCESS=$(echo "$DELETE_RESPONSE" | jq -r '.success // false')
-              if [ "$DELETE_SUCCESS" = "true" ]; then
-                echo "✅ DNS record deleted successfully"
-              else
-                echo "⚠️ Failed to delete DNS record"
-                echo "$DELETE_RESPONSE" | jq '.'
-              fi
-            else
-              echo "⚠️ DNS record not found"
-            fi
-          fi
-          
-          # Delete Cloudflare tunnel
-          if [ -n "${{ steps.tunnel.outputs.tunnel_id }}" ] && [ "${{ steps.tunnel.outputs.tunnel_id }}" != "null" ]; then
-            echo "Deleting Cloudflare tunnel ${{ steps.tunnel.outputs.tunnel_id }}..."
-            TUNNEL_DELETE_RESPONSE=$(curl -s --connect-timeout 10 --max-time 30 \
-              -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-              "https://api.cloudflare.com/client/v4/accounts/${{ steps.config.outputs.cloudflare_account_id }}/cfd_tunnel/${{ steps.tunnel.outputs.tunnel_id }}" \
-              --request DELETE \
-              --header "Authorization: Bearer ${{ steps.config.outputs.cloudflare_api_token }}")
-            
-            TUNNEL_DELETE_SUCCESS=$(echo "$TUNNEL_DELETE_RESPONSE" | jq -r '.success // false')
-            if [ "$TUNNEL_DELETE_SUCCESS" = "true" ]; then
-              echo "✅ Cloudflare tunnel deleted successfully"
-            else
-              echo "⚠️ Failed to delete Cloudflare tunnel"
-              echo "$TUNNEL_DELETE_RESPONSE" | jq '.'
-            fi
-          else
-            echo "⚠️ Tunnel ID not found"
-          fi
-          
-          echo "✅ Cloudflare cleanup complete"
-
-      - name: Cleanup VNC
-        if: always() && steps.config.outputs.vnc_enabled == 'true'
-        run: |
-          export PATH=$PATH:/opt/TurboVNC/bin
-          echo "Cleaning up VNC server..."
-          
-          vncserver -kill :1 || true
-          
-          echo "✅ VNC cleanup complete"
