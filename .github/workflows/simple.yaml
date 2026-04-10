@@ -231,6 +231,9 @@ jobs:
           echo 'Acquire::Queue-Mode "access";' | sudo tee /etc/apt/apt.conf.d/99parallel
           echo 'APT::Acquire::Retries "3";' | sudo tee -a /etc/apt/apt.conf.d/99parallel
 
+          # Use standard Ubuntu archive instead of Azure mirror
+          sudo sed -i 's/azure.archive.ubuntu.com/archive.ubuntu.com/g' /etc/apt/sources.list
+
           sudo apt-get update -q
 
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -749,15 +752,53 @@ jobs:
             --header "Authorization: Bearer ${{ steps.config.outputs.cloudflare_api_token }}" | jq -r '.result[0].id // empty')
 
           if [ -n "$EXISTING_TUNNEL" ]; then
-            echo "Found existing tunnel: $EXISTING_TUNNEL - Deleting..."
-            DELETE_RESPONSE=$(curl -s --connect-timeout 10 --max-time 30 \
+            echo "Found existing tunnel: $EXISTING_TUNNEL"
+
+            # First, try to clean up tunnel connections
+            echo "Cleaning up tunnel connections..."
+            CLEANUP_RESPONSE=$(curl -s --connect-timeout 10 --max-time 30 \
               -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-              "https://api.cloudflare.com/client/v4/accounts/${{ steps.config.outputs.cloudflare_account_id }}/cfd_tunnel/${EXISTING_TUNNEL}" \
+              "https://api.cloudflare.com/client/v4/accounts/${{ steps.config.outputs.cloudflare_account_id }}/cfd_tunnel/${EXISTING_TUNNEL}/connections" \
               --request DELETE \
               --header "Authorization: Bearer ${{ steps.config.outputs.cloudflare_api_token }}")
-            echo "Delete response: $DELETE_RESPONSE"
-            echo "✅ Old tunnel deleted"
-            sleep 2
+            echo "Cleanup connections response: $CLEANUP_RESPONSE"
+
+            # Wait for connections to close
+            sleep 5
+
+            # Retry deletion with backoff
+            MAX_RETRIES=3
+            RETRY_COUNT=0
+            DELETE_SUCCESS=false
+
+            while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$DELETE_SUCCESS" != "true" ]; do
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              echo "Attempting to delete tunnel (attempt $RETRY_COUNT/$MAX_RETRIES)..."
+
+              DELETE_RESPONSE=$(curl -s --connect-timeout 10 --max-time 30 \
+                -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+                "https://api.cloudflare.com/client/v4/accounts/${{ steps.config.outputs.cloudflare_account_id }}/cfd_tunnel/${EXISTING_TUNNEL}" \
+                --request DELETE \
+                --header "Authorization: Bearer ${{ steps.config.outputs.cloudflare_api_token }}")
+
+              DELETE_SUCCESS=$(echo "$DELETE_RESPONSE" | jq -r '.success // false')
+
+              if [ "$DELETE_SUCCESS" = "true" ]; then
+                echo "✅ Old tunnel deleted successfully"
+              else
+                ERROR_MSG=$(echo "$DELETE_RESPONSE" | jq -r '.errors[0].message // "Unknown error"')
+                echo "⚠️ Delete attempt $RETRY_COUNT failed: $ERROR_MSG"
+                if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                  WAIT_TIME=$((RETRY_COUNT * 2))
+                  echo "Waiting ${WAIT_TIME} seconds before retry..."
+                  sleep $WAIT_TIME
+                fi
+              fi
+            done
+
+            if [ "$DELETE_SUCCESS" != "true" ]; then
+              echo "⚠️ Could not delete existing tunnel after $MAX_RETRIES attempts. Will try to create a new tunnel anyway."
+            fi
           else
             echo "No existing tunnel found"
           fi
@@ -1315,9 +1356,39 @@ jobs:
             exit 0
           fi
 
-          echo "Zipping browser profile: $PROFILE_DIR"
-          echo "  Profile size before zip: $(du -sh "$PROFILE_DIR" | cut -f1)"
+          echo "Cleaning up browser profile cache files..."
+          echo "  Profile size before cleanup: $(du -sh "$PROFILE_DIR" | cut -f1)"
 
+          # Remove Chrome cache directories to reduce upload size
+          find "$PROFILE_DIR" -type d \( \
+            -name "Cache" \
+            -o -name "Code Cache" \
+            -o -name "GPUCache" \
+            -o -name "ShaderCache" \
+            -o -name "GrShaderCache" \
+            -o -name "CacheStorage" \
+            -o -name "ScriptCache" \
+            -o -name "Service Worker" \
+            -o -name "blob_storage" \
+            -o -name "IndexedDB" \
+            -o -name "Session Storage" \
+            -o -name "Crashpad" \
+            -o -name "BrowserMetrics" \
+          \) -exec rm -rf {} + 2>/dev/null || true
+
+          # Remove large temporary/log files
+          find "$PROFILE_DIR" -type f \( \
+            -name "*.log" \
+            -o -name "*.tmp" \
+            -o -name "LOG" \
+            -o -name "LOG.old" \
+            -o -name "LOCK" \
+            -o -name "TransportSecurity" \
+          \) -delete 2>/dev/null || true
+
+          echo "  Profile size after cleanup: $(du -sh "$PROFILE_DIR" | cut -f1)"
+
+          echo "Zipping browser profile: $PROFILE_DIR"
           cd "$HOME/browser-profiles"
           zip -r "/tmp/${BROWSER_PROFILE_ID}.zip" "${BROWSER_PROFILE_ID}/" -x "*/SingletonLock" "*/SingletonCookie" "*/SingletonSocket"
 
